@@ -65,10 +65,10 @@ def media_info_from_probe(data: dict[str, Any]) -> MediaInfo:
     )
 
 
-def run_ffmpeg(args: list[str]) -> None:
+def run_ffmpeg(args: list[str], cwd: Path | None = None) -> None:
     command = [_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", *args]
     result = subprocess.run(
-        command, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        command, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd
     )
     if result.returncode != 0:
         raise FFmpegError(
@@ -101,6 +101,39 @@ def last_keyframe(packets_csv: str, t: float) -> float | None:
         if pts_time is not None and "K" in flags and pts_time <= t + 1e-3:
             times.append(pts_time)
     return max(times, default=None)
+
+
+def measure_loudness(src: Path, start_s: float, duration_s: float, target: str) -> dict[str, str]:
+    """First pass of two-pass loudnorm: FFmpeg's measurements of that stretch of audio."""
+    result = subprocess.run(
+        [_tool("ffmpeg"), "-hide_banner", "-nostdin", "-ss", f"{start_s:.3f}", "-i", str(src),
+         "-t", f"{duration_s:.3f}", "-vn", "-af", f"{target}:print_format=json", "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )  # fmt: skip
+    if result.returncode != 0:
+        raise FFmpegError(f"Loudness measurement failed: {result.stderr.strip()[-500:]}")
+    return parse_loudnorm(result.stderr)
+
+
+def parse_loudnorm(stderr: str) -> dict[str, str]:
+    """loudnorm prints its measurements as the last JSON object in FFmpeg's log."""
+    start, end = stderr.rfind("{"), stderr.rfind("}")
+    if start < 0 or end < start:
+        raise FFmpegError("loudnorm printed no measurements")
+    data = json.loads(stderr[start : end + 1])
+    if not {"input_i", "input_tp", "input_lra", "input_thresh", "target_offset"} <= data.keys():
+        raise FFmpegError(f"Unexpected loudnorm output: {sorted(data)}")
+    return data
+
+
+def encode_to(dst: Path, args: list[str], cwd: Path | None = None) -> None:
+    """Run FFmpeg with `args` writing to a temp file next to dst, then move it into place."""
+    tmp = dst.with_name(f"{dst.stem}.tmp{dst.suffix}")
+    try:
+        run_ffmpeg([*args, str(tmp)], cwd=cwd)
+        _replace(tmp, dst)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def copy_cut(src: Path, dst: Path, start_s: float, duration_s: float) -> None:

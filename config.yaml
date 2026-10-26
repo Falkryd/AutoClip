@@ -87,15 +87,17 @@ render:
   video_encoder: h264_nvenc    # or libx264 for CPU
   quality: 23                  # NVENC cq / x264 crf: lower = better and bigger
   audio_bitrate: 160k
+  normalize_audio: true        # every Short at YouTube's loudness (-14 LUFS)
   captions:
     enabled: true
     style: word_highlight      # word_highlight = current word lit up. sentence = plain lines
     font: Arial
-    font_size: 64
+    font_size: 80
     max_words_per_line: 4
     text_color: "#FFFFFF"
     highlight_color: "#FFD400"
-    outline: 4
+    outline: 5
+    y: 0.49                    # caption baseline as a fraction of the height: 0.49 = just above the Dota HUD
 
 upload:
   privacy: private        # the only allowed value: nothing is ever published automatically

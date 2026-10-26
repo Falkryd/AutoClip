@@ -87,6 +87,11 @@ class Artifacts:
         return self.root / "clips"
 
     @property
+    def renders(self) -> Path:
+        """Written last by the render stage: the finished clips and their details."""
+        return self.root / "renders.json"
+
+    @property
     def uploads(self) -> Path:
         return self.root / "uploads.json"
 

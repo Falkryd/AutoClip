@@ -146,6 +146,7 @@ class CaptionConfig(_Section):
     text_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
     highlight_color: str = Field(default="#FFD400", pattern=r"^#[0-9A-Fa-f]{6}$")
     outline: int = Field(default=4, ge=0)
+    y: float = Field(default=0.49, gt=0, lt=1)  # caption baseline, as a fraction of the height
 
 
 class RenderConfig(_Section):
@@ -158,6 +159,7 @@ class RenderConfig(_Section):
     video_encoder: Literal["h264_nvenc", "libx264"] = "h264_nvenc"
     quality: int = Field(default=23, ge=0, le=51)
     audio_bitrate: str = "160k"
+    normalize_audio: bool = True  # to -14 LUFS, YouTube's playback loudness
     captions: CaptionConfig = CaptionConfig()
 
 

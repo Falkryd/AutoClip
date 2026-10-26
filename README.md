@@ -9,7 +9,7 @@ Runs after each YouTube live stream ends and turns the VOD into 2–3 vertical S
 | 2 | download: VOD + chat replay (yt-dlp) | `uv run python -m src.download VIDEO_ID` | done |
 | 3 | transcribe: YouTube captions, Whisper fallback | `uv run python -m src.transcribe VIDEO_ID` | done |
 | 4 | highlights: laughs + loudness + chat + Ollama | `uv run python -m src.highlights VIDEO_ID` | done |
-| 5 | render: 9:16 stacked layout + captions | `uv run python -m src.render VIDEO_ID` | |
+| 5 | render: 9:16 stacked layout + word captions | `uv run python -m src.render VIDEO_ID` | done |
 | 6 | upload: private upload + Discord | `uv run python -m src.upload VIDEO_ID` | |
 
 Stages pass work to each other only through files in `work/<video_id>/`. State (what was
@@ -155,6 +155,31 @@ uv run python -m src.highlights VIDEO_ID --no-llm                   # signals on
 `highlights.json` holds the clips (times in `vod.mp4` and in the full stream, scores per
 signal, transcript text, music warnings for copyright) and every candidate that was judged,
 for tuning the weights in `config.yaml`.
+
+## Render usage
+
+```bash
+uv run python -m src.render VIDEO_ID                              # work/<id>/
+uv run python -m src.render samples/8fKUNhHQR_M_023300-033300     # a sample folder
+uv run python -m src.render VIDEO_ID --preview                    # one still, to tune the crops
+```
+
+Each clip in `highlights.json` becomes `clips/NN.mp4` (1080x1920, 60 fps, H.264 on the GPU via
+NVENC, AAC 48 kHz) plus `NN.jpg` (thumbnail for the review message) and `NN.ass` (the captions):
+
+- **Layout** (`render.layout: stacked`): the gameplay crop (`render.gameplay`, the middle of the
+  screen) at full width on top, the avatar crop (`render.avatar`, bottom-right of the stream)
+  enlarged below at its own shape, on a blurred copy of the stream. `--preview` writes
+  `clips/layout_preview.png` so the boxes can be tuned without rendering whole clips.
+  `layout: center` is a plain 9:16 crop instead.
+- **Captions**: up to 4 words at a time, broken at pauses and punctuation, the word being said
+  lit up (`captions.highlight_color`). `captions.y` sets the height (0.49 = just above the
+  Dota HUD); `captions.style: sentence` turns the word highlight off.
+- **Audio**: two-pass loudness normalization to YouTube's -14 LUFS (with a -1.5 dBTP peak
+  limit, so loud reactions don't clip).
+
+Rendering takes about a quarter of the clip's length on the RTX 5060 Ti. If NVENC ever fails,
+set `render.video_encoder: libx264` to encode on the CPU.
 
 ## Tests
 
