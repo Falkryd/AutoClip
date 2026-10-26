@@ -325,6 +325,7 @@ def _evaluate(
         "still_screen": round(still, 2),  # share of seconds where the gameplay barely moves
         "llm_score": verdict.score if verdict else None,
         "title": title,
+        "hook": verdict.hook if verdict else "",
         "reason": reason,
         "laughs": inputs.count_between(inputs.laugh_times, start, end),
         "theme_words": inputs.count_between(inputs.focus_times, start, end),

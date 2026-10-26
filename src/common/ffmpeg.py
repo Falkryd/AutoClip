@@ -103,11 +103,14 @@ def last_keyframe(packets_csv: str, t: float) -> float | None:
     return max(times, default=None)
 
 
-def measure_loudness(src: Path, start_s: float, duration_s: float, target: str) -> dict[str, str]:
+def measure_loudness(
+    src: Path, start_s: float, duration_s: float, target: str, pre_filter: str = ""
+) -> dict[str, str]:
     """First pass of two-pass loudnorm: FFmpeg's measurements of that stretch of audio."""
     result = subprocess.run(
         [_tool("ffmpeg"), "-hide_banner", "-nostdin", "-ss", f"{start_s:.3f}", "-i", str(src),
-         "-t", f"{duration_s:.3f}", "-vn", "-af", f"{target}:print_format=json", "-f", "null", "-"],
+         "-t", f"{duration_s:.3f}", "-vn", "-af", f"{pre_filter}{target}:print_format=json",
+         "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )  # fmt: skip
     if result.returncode != 0:

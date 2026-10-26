@@ -44,6 +44,9 @@ Pick start_id and end_id from the given line ids: start just before the setup (n
 intro), end right after the payoff or the laughter.
 title: short and catchy, in casual Indonesian like the streamer talks, at most 60 characters, \
 no hashtags.
+hook: on-screen text shown at the top for the whole clip, so a stranger knows from the first \
+second what to wait for: the setup or the stakes, not the punchline. Casual Indonesian, at \
+most 8 words, no emoji.
 reason: one English sentence: what happens and why it works or doesn't.
 Answer with JSON only."""
 
@@ -54,9 +57,10 @@ VERDICT_SCHEMA: dict[str, Any] = {
         "start_id": {"type": "integer"},
         "end_id": {"type": "integer"},
         "title": {"type": "string"},
+        "hook": {"type": "string"},
         "reason": {"type": "string"},
     },
-    "required": ["score", "start_id", "end_id", "title", "reason"],
+    "required": ["score", "start_id", "end_id", "title", "hook", "reason"],
 }
 
 
@@ -79,6 +83,7 @@ class Verdict(BaseModel):
     start_id: int
     end_id: int
     title: str = Field(min_length=1, max_length=100)
+    hook: str = Field(default="", max_length=100)
     reason: str = Field(min_length=1)
 
 

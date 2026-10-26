@@ -61,14 +61,18 @@ def plan_layout(rc: RenderConfig, src_w: int, src_h: int) -> Layout:
     return Layout(width, height, game, game_out, avatar, avatar_out)
 
 
-def filter_graph(layout: Layout, captions_file: str | None) -> str:
+def filter_graph(layout: Layout, captions_file: str | None, select: str | None = None) -> str:
     """Input 0's video to [vout]. captions_file is a bare file name, resolved from FFmpeg's
-    working directory (Windows paths inside filter arguments need awkward escaping)."""
+    working directory (Windows paths inside filter arguments need awkward escaping).
+    select: a select expression for jump cuts, applied before anything else."""
     w, h = layout.width, layout.height
     g, go = layout.gameplay_src, layout.gameplay_out
     has_avatar = layout.avatar_src is not None and layout.avatar_out is not None
     steps = [
-        f"[0:v]split={3 if has_avatar else 2}[bg][game_in]" + ("[avatar_in]" if has_avatar else ""),
+        "[0:v]"
+        + (f"select={select},setpts=N/FRAME_RATE/TB," if select else "")
+        + f"split={3 if has_avatar else 2}[bg][game_in]"
+        + ("[avatar_in]" if has_avatar else ""),
         # Background: blurred at quarter size (much faster), then scaled back up and darkened.
         f"[bg]scale={w // 4}:{h // 4}:force_original_aspect_ratio=increase,"
         f"crop={w // 4}:{h // 4},boxblur=8:1,scale={w}:{h},eq=brightness=-0.15[base]",

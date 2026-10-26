@@ -152,6 +152,17 @@ class CaptionConfig(_Section):
     y: float = Field(default=0.49, gt=0, lt=1)  # caption baseline, as a fraction of the height
 
 
+class HookConfig(_Section):
+    """A line at the top for the whole clip that says what viewers are waiting for."""
+
+    enabled: bool = True
+    font_size: int = Field(default=56, gt=0)
+    y: float = Field(default=0.07, gt=0, lt=1)  # top of the box, as a fraction of the height
+    text_color: str = Field(default="#FFFFFF", pattern=r"^#[0-9A-Fa-f]{6}$")
+    box_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
+    box_opacity: float = Field(default=0.7, ge=0, le=1)
+
+
 class RenderConfig(_Section):
     layout: Literal["stacked", "center"] = "stacked"
     width: int = Field(default=1080, gt=0)
@@ -163,6 +174,9 @@ class RenderConfig(_Section):
     quality: int = Field(default=23, ge=0, le=51)
     audio_bitrate: str = "160k"
     normalize_audio: bool = True  # to -14 LUFS, YouTube's playback loudness
+    jump_cuts: bool = True  # drop pauses between lines
+    max_pause_seconds: float = Field(default=0.6, ge=0.1)
+    hook: HookConfig = HookConfig()
     captions: CaptionConfig = CaptionConfig()
 
 

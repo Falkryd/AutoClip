@@ -13,6 +13,13 @@ from src.common.files import read_json, write_json_atomic
 from src.common.paths import resolve_target
 from src.render.captions import ass_color, ass_time, build_ass, caption_pages
 from src.render.core import clip_words, render_preview, run_render
+from src.render.cuts import (
+    cut_time,
+    keep_intervals,
+    kept_duration,
+    remap_words,
+    select_expression,
+)
 from src.render.layout import Box, filter_graph, plan_layout
 
 # --- layout -----------------------------------------------------------------------------------
@@ -132,20 +139,20 @@ def sample_folder(cfg: AppConfig, tmp_path: Path) -> Any:
     ]})  # fmt: skip
     write_json_atomic(root / "highlights.json", {"clips": [
         {"rank": 1, "start": 0.4, "end": 3.4, "duration_s": 3.0, "title": "Halo",
-         "reason": "Test.", "flags": [], "stream_start": "0:00:00"},
+         "reason": "Test.", "flags": [], "stream_start": "0:00:00", "hook": "Misi malam ini"},
     ]})  # fmt: skip
     return resolve_target(cfg, str(root))
 
 
-def cpu_cfg(cfg: AppConfig) -> AppConfig:
-    render = cfg.render.model_copy(update={"video_encoder": "libx264"})
-    return cfg.model_copy(update={"render": render})
+def cpu_cfg(cfg: AppConfig, **render_settings: Any) -> AppConfig:
+    update = {"video_encoder": "libx264"} | render_settings
+    return cfg.model_copy(update={"render": cfg.render.model_copy(update=update)})
 
 
 @needs_ffmpeg
 def test_render_makes_a_vertical_clip_with_thumbnail(cfg: AppConfig, tmp_path: Path) -> None:
     target = sample_folder(cfg, tmp_path)
-    manifest = run_render(cpu_cfg(cfg), target)
+    manifest = run_render(cpu_cfg(cfg, jump_cuts=False), target)
     clips = target.artifacts.clips_dir
     info = probe(clips / "01.mp4")
     assert (info.width, info.height) == (1080, 1920)
@@ -161,3 +168,58 @@ def test_render_preview_writes_one_frame(cfg: AppConfig, tmp_path: Path) -> None
     target = sample_folder(cfg, tmp_path)
     preview = render_preview(cpu_cfg(cfg), target)
     assert preview.name == "layout_preview.png" and preview.stat().st_size > 0
+
+
+@needs_ffmpeg
+def test_jump_cuts_drop_the_silent_tail(cfg: AppConfig, tmp_path: Path) -> None:
+    # The clip runs 0.4-3.4 s; speech is 0.5-2.0 s, so everything after ~2.25 s is cut.
+    target = sample_folder(cfg, tmp_path)
+    manifest = run_render(cpu_cfg(cfg), target)
+    clip = manifest["clips"][0]
+    assert clip["source_duration_s"] == 3.0
+    assert clip["duration_s"] == pytest.approx(1.85, abs=0.12)
+    assert probe(target.artifacts.clips_dir / "01.mp4").has_audio
+    ass = (target.artifacts.clips_dir / "01.ass").read_text(encoding="utf-8")
+    assert "Dialogue: 0,0:00:00.00,0:00:01.85,Hook,,0,0,0,,Misi malam ini" in ass
+
+
+# --- jump cuts and the hook line -------------------------------------------------------------
+
+
+def test_keep_intervals_pads_merges_and_keeps_laughs() -> None:
+    words = [w(1.0, 1.4, "Tertidur"), w(1.5, 2.0, "dengan"), w(6.0, 6.5, "LS4")]
+    kept = keep_intervals(words, laugh_times=[9.0], duration_s=12.0, max_pause_s=0.6)
+    # 0.75-2.25 (two words merged), 5.75-6.75, the laugh 8.5-10.5
+    assert kept == [(0.75, 2.25), (5.75, 6.75), (8.5, 10.5)]
+    assert kept_duration(kept) == 4.5
+    # short pauses are kept, so speech isn't chopped mid-sentence
+    assert keep_intervals(words[:2] + [w(2.8, 3.0, "x")], [], 12.0, 0.6) == [(0.75, 3.25)]
+    assert keep_intervals([], [], 12.0, 0.6) == [(0.0, 12.0)]  # nobody talks: keep it all
+
+
+def test_cut_timeline() -> None:
+    kept = [(0.75, 2.25), (5.75, 6.75)]
+    assert cut_time(0.75, kept) == 0.0
+    assert cut_time(6.0, kept) == 1.75  # 1.5 s of the first piece + 0.25 s into the second
+    assert remap_words([w(6.0, 6.5, "LS4")], kept) == [w(1.75, 2.25, "LS4")]
+    assert select_expression(kept) == "'between(t,0.750,2.250)+between(t,5.750,6.750)'"
+
+
+def test_filter_graph_cuts_before_anything_else() -> None:
+    graph = filter_graph(plan_layout(RenderConfig(), 1920, 1080), "01.ass", "'between(t,1,2)'")
+    assert graph.startswith("[0:v]select='between(t,1,2)',setpts=N/FRAME_RATE/TB,split=3")
+
+
+def test_hook_line_in_a_box_at_the_top() -> None:
+    from src.common.config import HookConfig
+
+    ass = build_ass([w(0.5, 1.0, "halo")], CaptionConfig(), 1080, 1920,
+                    hook="Janji: ga tidur sebelum menang", hook_style=HookConfig(),
+                    duration_s=42.0)  # fmt: skip
+    style = next(line for line in ass.splitlines() if line.startswith("Style: Hook"))
+    fields = style.split(",")
+    assert fields[15] == "3" and fields[18] == "8"  # opaque box, top centre
+    assert fields[5] == "&H4D000000"  # black box at 70 % opacity
+    assert fields[-2] == "134"  # 7 % from the top
+    assert "Dialogue: 0,0:00:00.00,0:00:42.00,Hook,,0,0,0,,Janji: ga tidur sebelum menang" in ass
+    assert "Style: Hook" not in build_ass([w(0.5, 1.0, "halo")], CaptionConfig(), 1080, 1920)

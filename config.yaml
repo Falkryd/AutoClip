@@ -96,6 +96,15 @@ render:
   quality: 23                  # NVENC cq / x264 crf: lower = better and bigger
   audio_bitrate: 160k
   normalize_audio: true        # every Short at YouTube's loudness (-14 LUFS)
+  jump_cuts: true              # cut pauses longer than max_pause_seconds between lines, so the
+  max_pause_seconds: 0.6       # payoff comes sooner (laughs are kept)
+  hook:                        # a line at the top for the whole clip: what viewers wait for
+    enabled: true              # (written by the LLM; edit "hook" in highlights.json before rendering)
+    font_size: 56
+    y: 0.07                    # top of the box, as a fraction of the height
+    text_color: "#FFFFFF"
+    box_color: "#000000"
+    box_opacity: 0.7
   captions:
     enabled: true
     style: word_highlight      # word_highlight = current word lit up. sentence = plain lines
