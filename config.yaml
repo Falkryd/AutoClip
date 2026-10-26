@@ -62,6 +62,12 @@ highlights:
   min_gap_seconds: 60     # minimum distance between picked clips
   min_llm_score: 4        # the LLM's 0-10 verdict below this: never picked, even if that means fewer clips
   laughter_tags: [tertawa]  # YouTube caption tags that count as laughs
+  # Clips where the gameplay area barely moves (paused game, menus, post-game scoreboard)
+  # lose up to this share of their score. 0 turns the check off; it takes ~3.5 min per hour
+  # of video, once per folder (cached in motion.json).
+  still_screen_penalty: 0.5
+  glossary:               # nicknames and slang on your stream, explained to the LLM. Add your own.
+    kotol: Keeper of the Light
   music_flag_seconds: 20  # flag clips with this much loud audio but no speech (likely music)
   weights:                # missing signals (no chat replay, no laugh tags) are left out and the rest rescaled
     chat: 0.1             # chat is quiet on this channel for now

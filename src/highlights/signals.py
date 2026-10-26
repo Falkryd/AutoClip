@@ -7,8 +7,16 @@ from pathlib import Path
 
 import numpy as np
 
+from src.common.config import Rect
+from src.common.ffmpeg import raw_frames
+
 SPIKE_BASELINE_S = 60  # loudness is compared with the median of the surrounding minute
 TOP_SECONDS = 5  # a window's loudness score: mean of its 5 biggest spikes
+MOTION_FPS = 2
+MOTION_SIZE = 64
+# Measured on this channel's VODs (motion per second, see motion_per_second): live late-game
+# Dota 21-24, a paused game ~2, the post-game scoreboard 2-5.
+STILL_MOTION = 4.0
 
 
 def loudness_per_second(wav_path: Path) -> np.ndarray:
@@ -83,3 +91,22 @@ def speech_per_second(segments: list[dict], duration_s: float) -> np.ndarray:
         for word in segment["words"]:
             speech[int(word["start"]) : int(np.ceil(word["end"]))] = True
     return speech
+
+
+def motion_per_second(vod: Path, area: Rect) -> np.ndarray:
+    """How much `area` of the picture changes each second: the mean absolute difference
+    between 64x64 grayscale frames (0-255), taken twice a second."""
+    crop = f"crop=iw*{area.w}:ih*{area.h}:iw*{area.x}:ih*{area.y}"
+    size = f"scale={MOTION_SIZE}:{MOTION_SIZE},format=gray"
+    data = raw_frames(vod, f"fps={MOTION_FPS},{crop},{size}")
+    frames = np.frombuffer(data, np.uint8).reshape(-1, MOTION_SIZE * MOTION_SIZE)
+    return motion_from_frames(frames.astype(np.float32))
+
+
+def motion_from_frames(frames: np.ndarray) -> np.ndarray:
+    """Per second: the bigger of its frame-to-frame differences."""
+    if len(frames) < 2:
+        return np.zeros(0)
+    diffs = np.abs(np.diff(frames, axis=0)).mean(axis=1)
+    seconds = len(diffs) // MOTION_FPS
+    return diffs[: seconds * MOTION_FPS].reshape(seconds, MOTION_FPS).max(axis=1)

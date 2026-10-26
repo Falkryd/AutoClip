@@ -109,6 +109,8 @@ class HighlightsConfig(_Section):
     min_gap_seconds: float = Field(default=60, ge=0)
     min_llm_score: int = Field(default=4, ge=0, le=10)
     laughter_tags: list[str] = Field(default_factory=lambda: ["tertawa"])
+    still_screen_penalty: float = Field(default=0.5, ge=0, le=1)
+    glossary: dict[str, str] = Field(default_factory=lambda: {"kotol": "Keeper of the Light"})
     music_flag_seconds: float = Field(default=20, ge=0)
     weights: Weights = Weights()
     ollama: OllamaConfig = OllamaConfig()

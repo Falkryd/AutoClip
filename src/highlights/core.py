@@ -9,7 +9,7 @@ import numpy as np
 
 from src.common.config import AppConfig, HighlightsConfig
 from src.common.files import read_json, write_json_atomic
-from src.common.paths import Target
+from src.common.paths import Artifacts, Target
 from src.common.state import utcnow
 from src.common.timecode import format_timecode
 from src.highlights.llm import OllamaJudge, Verdict, format_excerpt
@@ -22,9 +22,12 @@ from src.highlights.selection import (
     shortlist,
 )
 from src.highlights.signals import (
+    MOTION_FPS,
+    STILL_MOTION,
     events_per_second,
     loudness_per_second,
     loudness_spikes,
+    motion_per_second,
     scale,
     speech_per_second,
     window_starts,
@@ -42,7 +45,8 @@ class HighlightsError(RuntimeError):
 class _Inputs:
     """Everything read from the folder, plus the per-window signal scores."""
 
-    def __init__(self, hc: HighlightsConfig, target: Target) -> None:
+    def __init__(self, cfg: AppConfig, target: Target) -> None:
+        hc = cfg.highlights
         a = target.artifacts
         for path, stage in ((a.transcript, "transcribe"), (a.audio, "download")):
             if not path.is_file():
@@ -83,6 +87,42 @@ class _Inputs:
             else:
                 self.scaled[name] = scaled
 
+        self.penalty = hc.still_screen_penalty
+        self.still = self._still_seconds(cfg, a)
+        self.window_still = (
+            window_sum(self.still.astype(float), self.starts, hc.window_seconds) / hc.window_seconds
+            if self.still is not None
+            else np.zeros(len(self.starts))
+        )
+
+    def _still_seconds(self, cfg: AppConfig, a: Artifacts) -> np.ndarray | None:
+        """True for seconds where the gameplay area barely moves (paused game, menus)."""
+        if self.penalty <= 0:
+            self.notes["still_screen"] = "off (still_screen_penalty: 0)"
+            return None
+        if a.motion.is_file():
+            motion = np.array(read_json(a.motion)["per_second"], dtype=float)
+        elif a.vod.is_file():
+            _log.info("Measuring how much the gameplay moves (once; cached in %s)", a.motion.name)
+            motion = motion_per_second(a.vod, cfg.render.gameplay)
+            cache = {
+                "fps": MOTION_FPS,
+                "area": cfg.render.gameplay.model_dump(),
+                "per_second": [round(float(v), 2) for v in motion],
+            }
+            write_json_atomic(a.motion, cache)
+        else:
+            self.notes["still_screen"] = "not checked: no vod.mp4"
+            return None
+        self.notes["still_screen"] = f"used (penalty up to {self.penalty:.0%})"
+        return motion < STILL_MOTION
+
+    def still_fraction(self, start: float, end: float) -> float:
+        if self.still is None:
+            return 0.0
+        part = self.still[int(start) : max(int(end), int(start) + 1)]
+        return float(part.mean()) if len(part) else 0.0
+
     def _window_counts(self, times: list[float], hc: HighlightsConfig) -> np.ndarray:
         return window_sum(events_per_second(times, self.duration), self.starts, hc.window_seconds)
 
@@ -104,10 +144,11 @@ def run_highlights(
     cfg: AppConfig, target: Target, *, use_llm: bool = True, judge: OllamaJudge | None = None
 ) -> dict[str, Any]:
     hc = cfg.highlights
-    inputs = _Inputs(hc, target)
+    inputs = _Inputs(cfg, target)
     weights = hc.weights.model_dump()
     signal_weights = {name: w for name, w in weights.items() if name != "llm"}
-    first_pass = combine(inputs.scaled, signal_weights)
+    # A still screen is penalised already here, so live moments get the LLM's attention.
+    first_pass = combine(inputs.scaled, signal_weights) * (1 - inputs.penalty * inputs.window_still)
     picked = shortlist(inputs.starts, first_pass, hc.window_seconds, hc.shortlist_size)
     _log.info(
         "Signals: %s. Shortlisted %d windows for the LLM",
@@ -116,7 +157,7 @@ def run_highlights(
 
     owns_judge = use_llm and judge is None
     if owns_judge:
-        judge = OllamaJudge(hc.ollama)
+        judge = OllamaJudge(hc.ollama, glossary=hc.glossary)
     if not use_llm:
         judge = None
         inputs.notes["llm"] = "skipped (--no-llm)"
@@ -149,6 +190,10 @@ def run_highlights(
             clip["start"], clip["end"], inputs.sounds, inputs.loudness, speech,
             hc.music_flag_seconds,
         )  # fmt: skip
+        if clip["still_screen"] >= 0.5:
+            clip["flags"].append(
+                f"{clip['still_screen']:.0%} still screen (paused game, menu or scoreboard)"
+            )
 
     document = {
         "video_id": target.video_id,
@@ -206,6 +251,8 @@ def _evaluate(
     if verdict:
         scores["llm"] = verdict.score / 10
     covered = segment_ids_between(segments, start, end)
+    still = inputs.still_fraction(start, end)
+    score = float(combine(scores, weights)) * (1 - inputs.penalty * still)
     if verdict:
         title, reason = verdict.title, verdict.reason
     else:
@@ -217,8 +264,9 @@ def _evaluate(
         "duration_s": round(end - start, 2),
         "stream_start": format_timecode(inputs.offset + start),
         "stream_end": format_timecode(inputs.offset + end),
-        "score": round(float(combine(scores, weights)), 3),
+        "score": round(score, 3),
         "scores": scores,
+        "still_screen": round(still, 2),  # share of seconds where the gameplay barely moves
         "llm_score": verdict.score if verdict else None,
         "title": title,
         "reason": reason,

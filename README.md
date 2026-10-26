@@ -152,6 +152,14 @@ uv run python -m src.highlights VIDEO_ID --no-llm                   # signals on
    fitted to 30-60 s. The best `clips_per_stream` (3), at least 60 s apart, are kept; anything
    the LLM scored below `min_llm_score` is never picked.
 
+4. **Still screens**: how much the gameplay area moves is measured once per folder (cached in
+   `motion.json`; about 3.5 min per hour of video). A clip loses up to `still_screen_penalty`
+   (50%) of its score by how much of it is still, so a paused game loses to live play. The
+   post-game scoreboard is just as still, so banter over it competes poorly on a full-stream
+   run; cut that stretch as its own section to get those clips.
+5. **Glossary**: `highlights.glossary` explains your stream's nicknames and slang to the LLM
+   (`kotol: Keeper of the Light`). Add your own.
+
 `highlights.json` holds the clips (times in `vod.mp4` and in the full stream, scores per
 signal, transcript text, music warnings for copyright) and every candidate that was judged,
 for tuning the weights in `config.yaml`.

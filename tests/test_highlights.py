@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import wave
 from pathlib import Path
 from typing import Any
@@ -9,11 +10,19 @@ import httpx
 import numpy as np
 import pytest
 
-from src.common.config import AppConfig, OllamaConfig
+from src.common.config import AppConfig, OllamaConfig, Rect
+from src.common.ffmpeg import run_ffmpeg
 from src.common.files import read_json, write_json_atomic
 from src.common.paths import Target, resolve_target
 from src.highlights.core import HighlightsError, run_highlights
-from src.highlights.llm import LlmError, OllamaJudge, Verdict, format_excerpt
+from src.highlights.llm import (
+    SYSTEM_PROMPT,
+    LlmError,
+    OllamaJudge,
+    Verdict,
+    format_excerpt,
+    system_prompt,
+)
 from src.highlights.selection import (
     clip_bounds,
     combine,
@@ -26,6 +35,8 @@ from src.highlights.signals import (
     events_per_second,
     loudness_per_second,
     loudness_spikes,
+    motion_from_frames,
+    motion_per_second,
     scale,
     window_starts,
     window_sum,
@@ -298,7 +309,8 @@ def test_stage_picks_the_laughing_moment(cfg: AppConfig, tmp_path: Path) -> None
     assert 30 <= clip["duration_s"] <= 60 and clip["start"] <= 101 <= clip["end"]
     assert clip["stream_start"] == "2:31:31"  # offset 9000 s + 91.7 s
     assert doc["signals"] == {"audio": "used", "laughter": "used",
-                              "chat": "not available: no chat replay"}  # fmt: skip
+                              "chat": "not available: no chat replay",
+                              "still_screen": "not checked: no vod.mp4"}  # fmt: skip
     assert read_json(target.artifacts.highlights)["clips"][0]["title"] == "Ngakak"
 
 
@@ -321,3 +333,53 @@ def test_stage_needs_a_transcript(cfg: AppConfig, tmp_path: Path) -> None:
 
 def test_segment_ids_between() -> None:
     assert segment_ids_between(segs((0, 2), (3, 5), (6, 8)), 4, 6.5) == [1, 2]
+
+
+# --- glossary and still screens ------------------------------------------------------------
+
+
+def test_glossary_goes_into_the_llm_instructions() -> None:
+    fake = FakeOllama([GOOD])
+    client = httpx.Client(base_url="http://ollama", transport=httpx.MockTransport(fake))
+    judge = OllamaJudge(OllamaConfig(), client, glossary={"kotol": "Keeper of the Light"})
+    judge.judge("x", "y", [2, 3, 4], min_s=30, max_s=60)
+    system = fake.requests[0][1]["messages"][0]["content"]
+    assert "- Nicknames and slang on this stream: kotol = Keeper of the Light." in system
+    assert system.index("kotol") < system.index("Speech recognition makes mistakes")
+    assert system_prompt({}) == SYSTEM_PROMPT
+
+
+def test_motion_from_frames_takes_the_bigger_change_per_second() -> None:
+    frames = np.array([[0.0], [0.0], [10.0], [10.0], [10.0], [30.0]])
+    # differences per half second: 0, 10, 0, 0, 20 -> seconds: max(0, 10), max(0, 0)
+    assert motion_from_frames(frames).tolist() == [10.0, 0.0]
+    assert len(motion_from_frames(frames[:1])) == 0
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg not installed")
+def test_motion_per_second_tells_moving_from_still(tmp_path: Path) -> None:
+    vod = tmp_path / "vod.mp4"
+    run_ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=3",
+                "-f", "lavfi", "-i", "color=c=gray:size=320x180:rate=30:duration=3",
+                "-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]",
+                "-c:v", "libx264", "-preset", "ultrafast", str(vod)])  # fmt: skip
+    motion = motion_per_second(vod, Rect(x=0, y=0, w=1, h=1))
+    assert len(motion) >= 5
+    assert motion[:2].min() > 4 and motion[-2:].max() < 1
+
+
+def test_still_screen_lowers_the_score_and_is_flagged(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    motion = [20.0] * 240
+    motion[80:140] = [1.0] * 60  # the game is paused around the laughing moment
+    write_json_atomic(target.artifacts.motion, {"fps": 2, "per_second": motion})
+
+    paused = run_highlights(small_cfg(cfg), target, judge=ScriptedJudge())  # type: ignore[arg-type]
+    clip = paused["clips"][0]
+    assert clip["still_screen"] >= 0.9
+    assert any("still screen" in flag for flag in clip["flags"])
+    assert paused["signals"]["still_screen"] == "used (penalty up to 50%)"
+
+    plain = run_highlights(small_cfg(cfg, still_screen_penalty=0), target, judge=ScriptedJudge())  # type: ignore[arg-type]
+    assert plain["signals"]["still_screen"].startswith("off")
+    assert plain["clips"][0]["score"] > clip["score"] * 1.5

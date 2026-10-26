@@ -79,6 +79,11 @@ class Artifacts:
         return self.root / "transcript.srt"
 
     @property
+    def motion(self) -> Path:
+        """How much the gameplay area moves each second (cached by the highlights stage)."""
+        return self.root / "motion.json"
+
+    @property
     def highlights(self) -> Path:
         return self.root / "highlights.json"
 

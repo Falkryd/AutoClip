@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import httpx
@@ -59,6 +60,16 @@ VERDICT_SCHEMA: dict[str, Any] = {
 }
 
 
+def system_prompt(glossary: Mapping[str, str] | None = None) -> str:
+    """The instructions, with the stream's own nicknames and slang (config: highlights.glossary)."""
+    if not glossary:
+        return SYSTEM_PROMPT
+    terms = "; ".join(f"{name} = {meaning}" for name, meaning in glossary.items())
+    anchor = "- Speech recognition makes mistakes"
+    line = f"- Nicknames and slang on this stream: {terms}."
+    return SYSTEM_PROMPT.replace(anchor, f"{line}\n{anchor}", 1)
+
+
 class LlmError(RuntimeError):
     """Ollama is unreachable, the model is missing, or a prompt is too long."""
 
@@ -97,8 +108,14 @@ def build_prompt(
 
 
 class OllamaJudge:
-    def __init__(self, cfg: OllamaConfig, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        cfg: OllamaConfig,
+        client: httpx.Client | None = None,
+        glossary: Mapping[str, str] | None = None,
+    ) -> None:
         self._cfg = cfg
+        self._system = system_prompt(glossary)
         self._client = client or httpx.Client(base_url=cfg.host, timeout=cfg.timeout_seconds)
 
     def check_ready(self) -> None:
@@ -123,12 +140,12 @@ class OllamaJudge:
         prompt = build_prompt(excerpt, hint, ids[0], ids[-1], min_s, max_s)
         # ~3 characters per token for this mix of Indonesian and English. Ollama silently
         # drops whatever doesn't fit in num_ctx, so refuse instead.
-        if (len(SYSTEM_PROMPT) + len(prompt)) / 3 > self._cfg.num_ctx * 0.8:
+        if (len(self._system) + len(prompt)) / 3 > self._cfg.num_ctx * 0.8:
             raise LlmError(
                 f"Prompt is too long for num_ctx={self._cfg.num_ctx}; raise it in config.yaml"
             )
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self._system},
             {"role": "user", "content": prompt},
         ]
         for attempt in range(2):

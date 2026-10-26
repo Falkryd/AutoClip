@@ -126,6 +126,20 @@ def parse_loudnorm(stderr: str) -> dict[str, str]:
     return data
 
 
+def raw_frames(src: Path, video_filter: str) -> bytes:
+    """Decoded frames as raw bytes after video_filter (which sets their size and pixel format).
+    Decodes on the GPU when FFmpeg can."""
+    result = subprocess.run(
+        [_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin", "-hwaccel", "auto",
+         "-i", str(src), "-vf", video_filter, "-f", "rawvideo", "-"],
+        capture_output=True,
+    )  # fmt: skip
+    if result.returncode != 0:
+        error = result.stderr.decode("utf-8", "replace").strip()[-500:]
+        raise FFmpegError(f"Decoding {src} failed: {error}")
+    return result.stdout
+
+
 def encode_to(dst: Path, args: list[str], cwd: Path | None = None) -> None:
     """Run FFmpeg with `args` writing to a temp file next to dst, then move it into place."""
     tmp = dst.with_name(f"{dst.stem}.tmp{dst.suffix}")
