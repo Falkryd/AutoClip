@@ -151,10 +151,12 @@ def clip_args(
     rc: RenderConfig,
     intervals: list[tuple[float, float]] | None = None,
 ) -> list[str]:
-    # -ss before -i seeks fast, and re-encoding makes the cut frame-accurate anyway.
+    # -ss and -t before -i: seek fast, and stop reading at the clip's end. After -i, -t only
+    # caps the output; with jump cuts the output is shorter, so FFmpeg would decode the VOD
+    # to its very end (minutes per clip). Re-encoding makes the cut frame-accurate.
     duration = clip["end"] - clip["start"]
     select = select_expression(intervals) if intervals else None
-    args = ["-ss", f"{clip['start']:.3f}", "-i", str(vod), "-t", f"{duration:.3f}",
+    args = ["-ss", f"{clip['start']:.3f}", "-t", f"{duration:.3f}", "-i", str(vod),
             "-filter_complex", filter_graph(layout, captions, select), "-map", "[vout]",
             "-map", "0:a:0", *_video_codec(rc)]  # fmt: skip
     # The audio gets exactly the same cuts as the video, so they stay in sync.

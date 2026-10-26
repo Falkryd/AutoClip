@@ -223,3 +223,15 @@ def test_hook_line_in_a_box_at_the_top() -> None:
     assert fields[-2] == "134"  # 7 % from the top
     assert "Dialogue: 0,0:00:00.00,0:00:42.00,Hook,,0,0,0,,Janji: ga tidur sebelum menang" in ass
     assert "Style: Hook" not in build_ass([w(0.5, 1.0, "halo")], CaptionConfig(), 1080, 1920)
+
+
+def test_clip_length_limits_reading_not_just_output() -> None:
+    # After -i, -t only caps the output. With jump cuts the output is shorter than the clip,
+    # so FFmpeg decoded the VOD to its end: 254 s instead of ~12 s for a clip 70 min from it.
+    from src.render.core import clip_args
+
+    layout = plan_layout(RenderConfig(), 1920, 1080)
+    clip = {"start": 100.0, "end": 153.0}
+    args = clip_args(Path("vod.mp4"), clip, layout, None,
+                     RenderConfig(normalize_audio=False), [(0.0, 3.0), (8.0, 9.0)])  # fmt: skip
+    assert args.index("-t") < args.index("-i") and args[args.index("-t") + 1] == "53.000"

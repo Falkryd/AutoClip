@@ -108,9 +108,9 @@ def measure_loudness(
 ) -> dict[str, str]:
     """First pass of two-pass loudnorm: FFmpeg's measurements of that stretch of audio."""
     result = subprocess.run(
-        [_tool("ffmpeg"), "-hide_banner", "-nostdin", "-ss", f"{start_s:.3f}", "-i", str(src),
-         "-t", f"{duration_s:.3f}", "-vn", "-af", f"{pre_filter}{target}:print_format=json",
-         "-f", "null", "-"],
+        [_tool("ffmpeg"), "-hide_banner", "-nostdin",
+         "-ss", f"{start_s:.3f}", "-t", f"{duration_s:.3f}", "-i", str(src),  # input options
+         "-vn", "-af", f"{pre_filter}{target}:print_format=json", "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )  # fmt: skip
     if result.returncode != 0:
