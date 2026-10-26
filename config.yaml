@@ -1,0 +1,92 @@
+# AutoClip settings. No secrets here: those live in .env.
+# Relative paths are resolved from the project folder.
+
+channel:
+  id: null                # your channel ID, starts with UC (YouTube Studio > Settings > Channel > Advanced)
+
+paths:
+  work_dir: work          # work/<video_id>/ holds every stage's output
+  log_dir: logs           # logs/pipeline.log
+  state_dir: state        # SQLite state + lock files
+
+logging:
+  level: INFO
+  max_bytes: 5000000
+  backup_count: 5
+
+trigger:
+  method: rss             # rss = public feed, free, no login. api = Data API, ~2 quota units per run
+  lookback_hours: 48      # streams first seen after they ended longer ago than this are skipped (stops a backfill on first run)
+  give_up_after_hours: 168  # stop rechecking a stream that stays live/processing/unavailable this long
+  api_max_results: 10     # api method only: how many recent uploads to check
+
+download:
+  format: "bv*[height<=1080]+ba/b[height<=1080]"
+  cookies_file: null      # Netscape cookies.txt, only if YouTube starts asking yt-dlp to sign in
+  retries: 5
+
+transcribe:
+  model: large-v3         # best for Indonesian with English mixed in; ~3 GB VRAM at int8_float16
+  device: cuda
+  compute_type: int8_float16
+  language: id            # Indonesian; English words still come through as spoken
+  beam_size: 5
+  vad_filter: true
+
+highlights:
+  clips_per_stream: 3     # hard max 6: each upload costs ~1,600 of 10,000 daily quota units
+  min_clip_seconds: 30
+  max_clip_seconds: 60
+  window_seconds: 45      # sliding window used for chat/audio scoring
+  step_seconds: 5
+  shortlist_size: 12      # top windows by chat+audio that the LLM gets to read
+  min_gap_seconds: 60     # minimum distance between picked clips
+  music_flag_seconds: 20  # flag clips with this much loud audio but no speech (likely music)
+  weights:
+    chat: 0.4
+    audio: 0.25
+    llm: 0.35
+  ollama:
+    host: http://127.0.0.1:11434
+    model: qwen2.5:7b     # handles Indonesian better than llama3.1:8b; fits in 8 GB
+    num_ctx: 8192         # set explicitly: Ollama silently truncates past its default
+    temperature: 0.2
+    timeout_seconds: 300
+    keep_alive: 0         # unload right after, freeing VRAM for FFmpeg/NVENC
+
+render:
+  layout: stacked         # stacked = gameplay on top, avatar panel below. center = plain 9:16 crop
+  width: 1080
+  height: 1920
+  # Regions of the source frame as fractions (0-1) of its width/height.
+  # Tune these with the layout preview the render stage will provide.
+  gameplay: {x: 0.236, y: 0.0, w: 0.528, h: 1.0}
+  avatar: {x: 0.0, y: 0.5, w: 0.3, h: 0.5}   # your avatar sits bottom-left
+  avatar_panel_fraction: 0.4   # share of the output height given to the avatar panel
+  video_encoder: h264_nvenc    # or libx264 for CPU
+  quality: 23                  # NVENC cq / x264 crf: lower = better and bigger
+  audio_bitrate: 160k
+  captions:
+    enabled: true
+    style: word_highlight      # word_highlight = current word lit up. sentence = plain lines
+    font: Arial
+    font_size: 64
+    max_words_per_line: 4
+    text_color: "#FFFFFF"
+    highlight_color: "#FFD400"
+    outline: 4
+
+upload:
+  privacy: private        # the only allowed value: nothing is ever published automatically
+  category_id: "20"       # Gaming
+  title_template: "{clip_title} #Shorts"
+  description_template: "From the stream: {stream_url}\n\n#Shorts"
+  tags: []
+  max_uploads_per_day: 5  # quota guard across all streams in a rolling 24 h
+
+notify:
+  username: AutoClip
+  mention_user_id: null   # your Discord user ID to get pinged
+
+cleanup:
+  delete_vod_after_render: false   # off: source files are kept unless you turn this on

@@ -1,0 +1,47 @@
+# Stream-to-Shorts Pipeline
+
+Automation that runs after each YouTube live stream ends and produces vertical Shorts from the VOD for my review.
+
+## Stack
+- Python 3.11, managed with [uv / venv]
+- Platform: [Linux / Windows / WSL], hardware: [GPU model or CPU only]
+- Tools: yt-dlp, faster-whisper, FFmpeg, Ollama (local LLM, model: [model name]), YouTube Data API v3
+- Config: `config.yaml` (non-secret settings). Secrets: `.env` only.
+
+## Pipeline stages (each is its own module in `src/`)
+1. `trigger`: detect newly finished broadcasts on my channel
+2. `download`: VOD and live chat replay via yt-dlp
+3. `transcribe`: timestamped transcript via faster-whisper
+4. `highlights`: score segments (chat activity, audio loudness, LLM transcript pass) and output the best 30-60 second windows as JSON
+5. `render`: FFmpeg cut, 9:16 crop, burned-in captions
+6. `upload`: post to YouTube as private, then send a Discord webhook notification
+
+## Hard rules
+- NEVER publish automatically. Uploads are always `private`. I publish manually after review.
+- NEVER hardcode, print, or log secrets, tokens, or webhook URLs. Never commit `.env`, `client_secret.json`, or `token.json`. Keep them in `.gitignore`.
+- Do not create Google Cloud projects or OAuth credentials. Write the auth code, and give me manual setup steps instead.
+- Stay within YouTube API quota. An upload costs about 1,600 units of a 10,000 daily default, so cap clips per stream in config (default 5).
+- Do not delete source VODs or intermediate files unless a config flag explicitly enables cleanup.
+
+## Conventions
+- Every stage has a CLI entry point (`python -m src.<stage> --help`) and can run alone on a given input.
+- Idempotent: track processed stream IDs in `state.json` (or SQLite). Re-running must skip finished work and resume partial work.
+- Intermediate outputs go in `work/<video_id>/` (transcript.json, highlights.json, clips/). Stages communicate through these files, not in-memory state.
+- Type hints on all functions. Small functions. No stage imports another stage's internals, only shared helpers from `src/common/`.
+- Logging via the `logging` module to `logs/pipeline.log` with rotation. Clear errors, no silent failures.
+- Retry with backoff on network and API calls. Fail loudly on anything else.
+
+## Testing and verification
+- Develop against the sample in `samples/` (5 to 10 minute clip), never a full multi-hour VOD.
+- After changing a stage, run it on the sample and show me the output files before moving on.
+- Unit tests with pytest for pure logic (scoring, time-window merging, caption formatting). Mock external APIs. Never call the real YouTube API in tests.
+
+## Workflow
+- Propose a plan before large changes. Implement one stage at a time.
+- Commit after each working stage with a clear message.
+- If a requirement is ambiguous, ask me rather than guessing, especially around anything that touches uploads or credentials.
+
+## Known risks
+- Copyright claims from music or game audio in clips. Flag clips with long music segments if detectable.
+- Unaudited API projects have uploads forced to private by YouTube, which is fine for this workflow.
+- Highlight scoring is the part I will tune most. Keep weights and thresholds in `config.yaml`, not in code.

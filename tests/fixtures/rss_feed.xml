@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCaaaaaaaaaaaaaaaaaaaaaa"/>
+ <id>yt:channel:aaaaaaaaaaaaaaaaaaaaaa</id>
+ <yt:channelId>aaaaaaaaaaaaaaaaaaaaaa</yt:channelId>
+ <title>Test Channel</title>
+ <entry>
+  <id>yt:video:AAAAAAAAAAA</id>
+  <yt:videoId>AAAAAAAAAAA</yt:videoId>
+  <title>Main bareng chat 🎮 | Live</title>
+  <published>2026-10-25T13:00:00+00:00</published>
+ </entry>
+ <entry>
+  <id>yt:video:BBBBBBBBBBB</id>
+  <yt:videoId>BBBBBBBBBBB</yt:videoId>
+  <title>  Short upload  </title>
+  <published>2026-10-24T09:00:00+00:00</published>
+ </entry>
+ <entry>
+  <id>yt:video:CCCCCCCCCCC</id>
+  <title>Entry without a video id is ignored</title>
+ </entry>
+</feed>

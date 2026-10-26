@@ -1,0 +1,20 @@
+# Secrets: never commit
+.env
+secrets/
+client_secret*.json
+token.json
+cookies*.txt
+
+# Pipeline output
+work/
+logs/
+state/
+samples/*
+!samples/README.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
