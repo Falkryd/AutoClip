@@ -2,7 +2,7 @@
 # Relative paths are resolved from the project folder.
 
 channel:
-  id: null                # your channel ID, starts with UC (YouTube Studio > Settings > Channel > Advanced)
+  id: UCxa-f1esdZktFDntGV1s7Uw   # find yours at https://www.youtube.com/account_advanced
 
 paths:
   work_dir: work          # work/<video_id>/ holds every stage's output

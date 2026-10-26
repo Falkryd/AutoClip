@@ -22,7 +22,8 @@ uv sync
 ```
 
 1. Copy `.env.example` to `.env`. Secrets go there and nowhere else.
-2. Set `channel.id` in `config.yaml` (YouTube Studio > Settings > Channel > Advanced settings).
+2. Set `channel.id` in `config.yaml`. Find your channel ID (starts with `UC`) at
+   https://www.youtube.com/account_advanced while signed in.
 3. Install Deno: yt-dlp needs a JavaScript runtime to download from YouTube.
    `winget install DenoLand.Deno`
 4. Already present on this machine: FFmpeg full build (with libass) and Ollama with `qwen2.5:7b`.
