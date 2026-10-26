@@ -82,7 +82,6 @@ class OllamaConfig(_Section):
     num_ctx: int = Field(default=8192, ge=2048)
     temperature: float = Field(default=0.2, ge=0, le=2)
     timeout_seconds: float = Field(default=300, gt=0)
-    keep_alive: str | int = 0
 
 
 class Weights(_Section):
@@ -106,7 +105,10 @@ class HighlightsConfig(_Section):
     window_seconds: float = Field(default=45, gt=0)
     step_seconds: float = Field(default=5, gt=0)
     shortlist_size: int = Field(default=12, ge=1)
+    context_seconds: float = Field(default=15, ge=0)
     min_gap_seconds: float = Field(default=60, ge=0)
+    min_llm_score: int = Field(default=4, ge=0, le=10)
+    laughter_tags: list[str] = Field(default_factory=lambda: ["tertawa"])
     music_flag_seconds: float = Field(default=20, ge=0)
     weights: Weights = Weights()
     ollama: OllamaConfig = OllamaConfig()

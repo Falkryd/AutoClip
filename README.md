@@ -8,7 +8,7 @@ Runs after each YouTube live stream ends and turns the VOD into 2–3 vertical S
 | 1 | trigger: find finished streams | `uv run python -m src.trigger` | done |
 | 2 | download: VOD + chat replay (yt-dlp) | `uv run python -m src.download VIDEO_ID` | done |
 | 3 | transcribe: YouTube captions, Whisper fallback | `uv run python -m src.transcribe VIDEO_ID` | done |
-| 4 | highlights: chat + loudness + Ollama | `uv run python -m src.highlights VIDEO_ID` | |
+| 4 | highlights: laughs + loudness + chat + Ollama | `uv run python -m src.highlights VIDEO_ID` | done |
 | 5 | render: 9:16 stacked layout + captions | `uv run python -m src.render VIDEO_ID` | |
 | 6 | upload: private upload + Discord | `uv run python -m src.upload VIDEO_ID` | |
 
@@ -131,6 +131,30 @@ captions and chat are shifted by that, so they line up with the video to within 
 Clean-up, mostly for Whisper: phrases it invents over music ("Terima kasih telah menonton!"),
 segments that are probably not speech, and repetition loops are dropped. YouTube's censored
 swear words come through as `***`.
+
+## Highlights usage
+
+```bash
+uv run python -m src.highlights VIDEO_ID                            # work/<id>/
+uv run python -m src.highlights samples/8fKUNhHQR_M_023300-033300   # a sample folder
+uv run python -m src.highlights VIDEO_ID --no-llm                   # signals only, for tuning
+```
+
+1. Every 45 s window (5 s steps) is scored on **laughs** (`[tertawa]` tags in YouTube's
+   captions), **loudness spikes** (how far you get above the surrounding minute, so a loud
+   teamfight alone doesn't count) and **chat** (messages in the window). A signal a stream
+   doesn't have (no chat replay, Whisper transcript without laugh tags) is left out and the
+   other weights are rescaled.
+2. The best 12 non-overlapping windows go to the local LLM (`qwen2.5:7b` in Ollama) with 15 s of
+   transcript around them. It scores each 0-10, picks clean start and end lines, and writes a
+   title and a one-line reason. The model is unloaded afterwards to free VRAM for rendering.
+3. Each clip is snapped to whole sentences, keeps a laugh that follows the punchline, and is
+   fitted to 30-60 s. The best `clips_per_stream` (3), at least 60 s apart, are kept; anything
+   the LLM scored below `min_llm_score` is never picked.
+
+`highlights.json` holds the clips (times in `vod.mp4` and in the full stream, scores per
+signal, transcript text, music warnings for copyright) and every candidate that was judged,
+for tuning the weights in `config.yaml`.
 
 ## Tests
 

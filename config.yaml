@@ -57,8 +57,11 @@ highlights:
   max_clip_seconds: 60
   window_seconds: 45      # sliding window used for chat/audio scoring
   step_seconds: 5
-  shortlist_size: 12      # top windows by chat+audio that the LLM gets to read
+  shortlist_size: 12      # top windows by laughs/loudness/chat that the LLM gets to judge
+  context_seconds: 15     # transcript the LLM sees around each window, to pick clean start/end lines
   min_gap_seconds: 60     # minimum distance between picked clips
+  min_llm_score: 4        # the LLM's 0-10 verdict below this: never picked, even if that means fewer clips
+  laughter_tags: [tertawa]  # YouTube caption tags that count as laughs
   music_flag_seconds: 20  # flag clips with this much loud audio but no speech (likely music)
   weights:                # missing signals (no chat replay, no laugh tags) are left out and the rest rescaled
     chat: 0.1             # chat is quiet on this channel for now
@@ -70,8 +73,7 @@ highlights:
     model: qwen2.5:7b     # handles Indonesian better than llama3.1:8b; fits in 8 GB
     num_ctx: 8192         # set explicitly: Ollama silently truncates past its default
     temperature: 0.2
-    timeout_seconds: 300
-    keep_alive: 0         # unload right after, freeing VRAM for FFmpeg/NVENC
+    timeout_seconds: 300  # the model is unloaded when the stage ends, freeing VRAM for rendering
 
 render:
   layout: stacked         # stacked = gameplay on top, avatar panel below. center = plain 9:16 crop
