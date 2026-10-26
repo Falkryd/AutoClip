@@ -8,6 +8,7 @@ paths:
   work_dir: work          # work/<video_id>/ holds every stage's output
   log_dir: logs           # logs/pipeline.log
   state_dir: state        # SQLite state + lock files
+  samples_dir: samples    # short excerpts for developing stages (download --section)
 
 logging:
   level: INFO
@@ -26,6 +27,7 @@ trigger:
 download:
   format: "bv*[height<=1080]+ba/b[height<=1080]"
   cookies_file: null      # Netscape cookies.txt, only if YouTube starts asking yt-dlp to sign in
+  deno_path: null         # path to deno.exe, only if deno isn't on PATH (yt-dlp needs it for YouTube)
   retries: 5
 
 transcribe:
@@ -64,7 +66,7 @@ render:
   # Regions of the source frame as fractions (0-1) of its width/height.
   # Tune these with the layout preview the render stage will provide.
   gameplay: {x: 0.236, y: 0.0, w: 0.528, h: 1.0}
-  avatar: {x: 0.0, y: 0.5, w: 0.3, h: 0.5}   # your avatar sits bottom-left
+  avatar: {x: 0.82, y: 0.62, w: 0.18, h: 0.38}   # avatar sits bottom-right, over the minimap (measured on 8fKUNhHQR_M)
   avatar_panel_fraction: 0.4   # share of the output height given to the avatar panel
   video_encoder: h264_nvenc    # or libx264 for CPU
   quality: 23                  # NVENC cq / x264 crf: lower = better and bigger

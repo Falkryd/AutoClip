@@ -6,7 +6,7 @@ Runs after each YouTube live stream ends and turns the VOD into 2–3 vertical S
 | # | Stage | Command | Status |
 |---|---|---|---|
 | 1 | trigger: find finished streams | `uv run python -m src.trigger` | done |
-| 2 | download: VOD + chat replay (yt-dlp) | `uv run python -m src.download VIDEO_ID` | next |
+| 2 | download: VOD + chat replay (yt-dlp) | `uv run python -m src.download VIDEO_ID` | done |
 | 3 | transcribe: faster-whisper | `uv run python -m src.transcribe VIDEO_ID` | |
 | 4 | highlights: chat + loudness + Ollama | `uv run python -m src.highlights VIDEO_ID` | |
 | 5 | render: 9:16 stacked layout + captions | `uv run python -m src.render VIDEO_ID` | |
@@ -24,7 +24,8 @@ uv sync
 1. Copy `.env.example` to `.env`. Secrets go there and nowhere else.
 2. Set `channel.id` in `config.yaml`. Find your channel ID (starts with `UC`) at
    https://www.youtube.com/account_advanced while signed in.
-3. Install Deno: yt-dlp needs a JavaScript runtime to download from YouTube.
+3. Install Deno: yt-dlp needs a JavaScript runtime to download from YouTube. Open a new
+   terminal afterwards so it's on PATH, or set `download.deno_path` in `config.yaml`.
    `winget install DenoLand.Deno`
 4. Already present on this machine: FFmpeg full build (with libass) and Ollama with `qwen2.5:7b`.
 
@@ -76,6 +77,29 @@ uv run python -m src.trigger --queue VIDEO_ID   # queue an older stream by hand
 On the first run, streams that ended more than `trigger.lookback_hours` ago are marked
 `skipped`, so old streams aren't backfilled. Live, upcoming and still-processing streams stay
 `waiting` and are rechecked on every run until their VOD is ready.
+
+## Download usage
+
+```bash
+uv run python -m src.download VIDEO_ID          # full VOD into work/<id>/
+uv run python -m src.download https://youtube.com/live/VIDEO_ID --section 2:33:00-3:33:00
+```
+
+`--section` cuts that part into `samples/<id>_<start>-<end>/` for developing later stages. It
+downloads the full VOD into `work/<id>/` first (yt-dlp fetching just a range stalls on long
+streams) and keeps it, so the real pipeline won't download it again. Every stage accepts the
+same folder layout:
+
+| File | What it is |
+|---|---|
+| `vod.mp4` | the video (1080p max) |
+| `live_chat.raw.jsonl` | chat replay as yt-dlp saved it (only if the stream has one) |
+| `chat.json` | flat message list, times relative to `vod.mp4`; `available: false` if no replay |
+| `audio.wav` | 16 kHz mono, for transcription and loudness scoring |
+| `download.json` | summary, written last: its presence means the stage finished |
+
+Re-running skips files that already exist; `--force` downloads again. YouTube doesn't seem
+to keep a chat replay for streams where nobody chatted, so `available: false` is normal.
 
 ## Tests
 

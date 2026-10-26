@@ -31,6 +31,7 @@ class PathsConfig(_Section):
     work_dir: Path = Path("work")
     log_dir: Path = Path("logs")
     state_dir: Path = Path("state")
+    samples_dir: Path = Path("samples")
 
 
 class LoggingConfig(_Section):
@@ -49,6 +50,7 @@ class TriggerConfig(_Section):
 class DownloadConfig(_Section):
     format: str = "bv*[height<=1080]+ba/b[height<=1080]"
     cookies_file: Path | None = None
+    deno_path: Path | None = None
     retries: int = Field(default=5, ge=0)
 
 
@@ -135,7 +137,7 @@ class RenderConfig(_Section):
     width: int = Field(default=1080, gt=0)
     height: int = Field(default=1920, gt=0)
     gameplay: Rect = Rect(x=0.236, y=0.0, w=0.528, h=1.0)
-    avatar: Rect = Rect(x=0.0, y=0.5, w=0.3, h=0.5)
+    avatar: Rect = Rect(x=0.82, y=0.62, w=0.18, h=0.38)
     avatar_panel_fraction: float = Field(default=0.4, gt=0, lt=1)
     video_encoder: Literal["h264_nvenc", "libx264"] = "h264_nvenc"
     quality: int = Field(default=23, ge=0, le=51)

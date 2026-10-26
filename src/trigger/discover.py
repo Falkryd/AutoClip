@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -18,7 +17,7 @@ from defusedxml import ElementTree
 from yt_dlp.utils import DownloadError
 
 from src.common.retry import with_retries
-from src.common.ytdl import ytdl_base_options, ytdl_error_message
+from src.common.ytdl import YtdlEnv, ytdl_base_options, ytdl_error_message
 
 RSS_URL = "https://www.youtube.com/feeds/videos.xml"
 _ATOM = "{http://www.w3.org/2005/Atom}"
@@ -47,11 +46,11 @@ def live_tab_url(channel_id: str) -> str:
 
 
 def discover_ytdlp(
-    channel_id: str, max_results: int, cookies_file: Path | None = None
+    channel_id: str, max_results: int, env: YtdlEnv | None = None
 ) -> list[Candidate]:
     """The channel's Live tab, newest first: past, live and upcoming streams."""
     try:
-        info = _extract_tab(live_tab_url(channel_id), max_results, cookies_file)
+        info = _extract_tab(live_tab_url(channel_id), max_results, env)
     except DownloadError as exc:
         message = ytdl_error_message(exc)
         if "does not have a streams tab" in message.lower():
@@ -70,9 +69,9 @@ def candidates_from_tab(info: dict[str, Any]) -> list[Candidate]:
 
 
 @with_retries(attempts=4)
-def _extract_tab(url: str, max_results: int, cookies_file: Path | None) -> dict[str, Any]:
+def _extract_tab(url: str, max_results: int, env: YtdlEnv | None) -> dict[str, Any]:
     # Flat listing: IDs and titles only, one request. Details come from fetch_metadata later.
-    options = ytdl_base_options(cookies_file) | {"extract_flat": True, "playlistend": max_results}
+    options = ytdl_base_options(env) | {"extract_flat": True, "playlistend": max_results}
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
     if not isinstance(info, dict):

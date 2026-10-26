@@ -1,0 +1,8 @@
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatTextMessageRenderer": {"message": {"runs": [{"text": "gg wp "}, {"emoji": {"emojiId": "😂", "shortcuts": [":face_with_tears_of_joy:", ":joy:"]}}]}, "authorName": {"simpleText": "Budi"}, "timestampUsec": "1761400000000000"}}}}], "videoOffsetTimeMsec": "9185500"}, "isLive": true}
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatPaidMessageRenderer": {"message": {"runs": [{"text": "semangat bang"}]}, "authorName": {"simpleText": "Sari"}, "purchaseAmountText": {"simpleText": "Rp20.000"}}}}}], "videoOffsetTimeMsec": "9200000"}}
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatMembershipItemRenderer": {"headerSubtext": {"runs": [{"text": "Welcome to "}, {"text": "Falkryd Squad"}]}, "authorName": {"simpleText": "Andi"}}}}}], "videoOffsetTimeMsec": "9100000"}}
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatPlaceholderItemRenderer": {"id": "placeholder"}}}}], "videoOffsetTimeMsec": "9300000"}}
+{"replayChatItemAction":
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatTextMessageRenderer": {"message": {"runs": [{"text": "waiting for stream"}]}, "authorName": {"simpleText": "Early"}}}}}], "videoOffsetTimeMsec": "-5000"}}
+{"replayChatItemAction": {"actions": [{"markChatItemAsDeletedAction": {"targetItemId": "x"}}], "videoOffsetTimeMsec": "9400000"}}
+{"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {"liveChatTextMessageRenderer": {"message": {"runs": [{"emoji": {"emojiId": "UCxa-f1esdZktFDntGV1s7Uw/abc", "shortcuts": [":_falkLUL:"], "isCustomEmoji": true}}]}, "authorName": {"runs": [{"text": "Rina"}]}}}}}], "videoOffsetTimeMsec": "9186000"}}

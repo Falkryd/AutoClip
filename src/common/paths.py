@@ -9,6 +9,7 @@ from pathlib import Path
 from src.common.config import AppConfig
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_URL_VIDEO_ID = re.compile(r"(?:[?&]v=|youtu\.be/|/live/|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
 
 
 def validate_video_id(video_id: str) -> str:
@@ -16,6 +17,17 @@ def validate_video_id(video_id: str) -> str:
     if not _VIDEO_ID.fullmatch(video_id):
         raise ValueError(f"Not a YouTube video ID: {video_id!r}")
     return video_id
+
+
+def video_id_from(text: str) -> str:
+    """Accept a bare video ID or any common YouTube URL (watch, youtu.be, /live/, /shorts/)."""
+    text = text.strip()
+    if _VIDEO_ID.fullmatch(text):
+        return text
+    match = _URL_VIDEO_ID.search(text)
+    if match is None:
+        raise ValueError(f"Not a YouTube video ID or URL: {text!r}")
+    return match.group(1)
 
 
 @dataclass(frozen=True)
@@ -33,12 +45,23 @@ class Artifacts:
         return self.root / "vod.mp4"
 
     @property
+    def chat_raw(self) -> Path:
+        """yt-dlp's live chat replay as downloaded (JSON lines)."""
+        return self.root / "live_chat.raw.jsonl"
+
+    @property
     def chat(self) -> Path:
-        return self.root / "live_chat.json"
+        """Flat list of chat messages with times relative to vod.mp4."""
+        return self.root / "chat.json"
 
     @property
     def audio(self) -> Path:
         return self.root / "audio.wav"
+
+    @property
+    def download_manifest(self) -> Path:
+        """Written last by the download stage; its presence means the stage finished."""
+        return self.root / "download.json"
 
     @property
     def transcript(self) -> Path:
@@ -59,6 +82,10 @@ class Artifacts:
 
 def artifacts(cfg: AppConfig, video_id: str) -> Artifacts:
     return Artifacts(cfg.resolve(cfg.paths.work_dir) / validate_video_id(video_id))
+
+
+def samples_root(cfg: AppConfig) -> Path:
+    return cfg.resolve(cfg.paths.samples_dir)
 
 
 def state_db(cfg: AppConfig) -> Path:

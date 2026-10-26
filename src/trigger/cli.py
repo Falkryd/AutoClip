@@ -14,7 +14,7 @@ from src.common.lock import LockHeldError, file_lock
 from src.common.logs import setup_logging
 from src.common.paths import artifacts, lock_path, state_db, validate_video_id
 from src.common.state import State, StreamRecord, StreamStatus, utcnow
-from src.common.ytdl import MetadataError, VideoMeta, fetch_metadata
+from src.common.ytdl import MetadataError, VideoMeta, YtdlEnv, fetch_metadata, ytdl_env
 from src.trigger.core import Decision, NotReadyError, queue_manually, run_trigger, stream_info
 from src.trigger.discover import (
     Candidate,
@@ -75,10 +75,10 @@ def _run(
     cfg: AppConfig, state: State, args: argparse.Namespace, log: logging.Logger
 ) -> list[Decision]:
     now = utcnow()
-    cookies = cfg.resolve(cfg.download.cookies_file) if cfg.download.cookies_file else None
+    env = ytdl_env(cfg)
 
     def fetch(video_id: str) -> VideoMeta:
-        return fetch_metadata(video_id, cookies)
+        return fetch_metadata(video_id, env)
 
     if args.queue:
         decisions = [
@@ -86,7 +86,7 @@ def _run(
             for v in args.queue
         ]
     else:
-        candidates = _discover(cfg, cookies)
+        candidates = _discover(cfg, env)
         log.info("Discovery (%s) found %d videos", cfg.trigger.method, len(candidates))
         decisions = run_trigger(cfg.trigger, state, candidates, fetch, now, dry_run=args.dry_run)
 
@@ -99,11 +99,11 @@ def _run(
     return decisions
 
 
-def _discover(cfg: AppConfig, cookies: Path | None) -> list[Candidate]:
+def _discover(cfg: AppConfig, env: YtdlEnv) -> list[Candidate]:
     if not cfg.channel.id:
         raise ConfigError("Set channel.id in config.yaml (your channel ID, starting with UC)")
     if cfg.trigger.method == "ytdlp":
-        return discover_ytdlp(cfg.channel.id, cfg.trigger.max_results, cookies)
+        return discover_ytdlp(cfg.channel.id, cfg.trigger.max_results, env)
     if cfg.trigger.method == "rss":
         return discover_rss(cfg.channel.id)
     from src.common.youtube_auth import build_youtube  # only the api method needs OAuth

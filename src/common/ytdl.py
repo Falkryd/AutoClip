@@ -1,4 +1,4 @@
-"""Video metadata through yt-dlp. Costs no API quota."""
+"""yt-dlp settings and video metadata. Costs no API quota."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 import yt_dlp
 from yt_dlp.utils import DownloadError
 
+from src.common.config import AppConfig
 from src.common.retry import with_retries
 
 _log = logging.getLogger("autoclip.ytdl")
@@ -21,6 +22,22 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 class MetadataError(RuntimeError):
     """yt-dlp could not read the video (private, removed, members-only, sign-in wall...)."""
+
+
+@dataclass(frozen=True)
+class YtdlEnv:
+    """Settings every yt-dlp call needs."""
+
+    cookies_file: Path | None = None
+    deno_path: Path | None = None  # only needed when deno isn't on PATH
+
+
+def ytdl_env(cfg: AppConfig) -> YtdlEnv:
+    dl = cfg.download
+    return YtdlEnv(
+        cookies_file=cfg.resolve(dl.cookies_file) if dl.cookies_file else None,
+        deno_path=cfg.resolve(dl.deno_path) if dl.deno_path else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -36,6 +53,10 @@ class VideoMeta:
         if self.started_at is None or self.duration_s is None:
             return None
         return self.started_at + timedelta(seconds=self.duration_s)
+
+
+# live_status values that mean the VOD can't be downloaded yet
+NOT_READY_STATUSES = frozenset({"is_live", "is_upcoming", "post_live"})
 
 
 def video_url(video_id: str) -> str:
@@ -59,10 +80,13 @@ class _YtdlLogger:
         _log.debug(msg)
 
 
-def ytdl_base_options(cookies_file: Path | None) -> dict[str, Any]:
+def ytdl_base_options(env: YtdlEnv | None = None) -> dict[str, Any]:
+    env = env or YtdlEnv()
     options: dict[str, Any] = {"quiet": True, "noprogress": True, "logger": _YtdlLogger()}
-    if cookies_file is not None:
-        options["cookiefile"] = str(cookies_file)
+    if env.cookies_file is not None:
+        options["cookiefile"] = str(env.cookies_file)
+    if env.deno_path is not None:
+        options["js_runtimes"] = {"deno": {"path": str(env.deno_path)}}
     return options
 
 
@@ -71,9 +95,9 @@ def ytdl_error_message(exc: DownloadError) -> str:
     return _ANSI.sub("", str(exc)).removeprefix("ERROR: ").strip()
 
 
-def fetch_metadata(video_id: str, cookies_file: Path | None = None) -> VideoMeta:
+def fetch_metadata(video_id: str, env: YtdlEnv | None = None) -> VideoMeta:
     try:
-        info = _extract(video_id, cookies_file)
+        info = _extract(video_id, env)
     except DownloadError as exc:
         message = ytdl_error_message(exc)
         if any(marker in message.lower() for marker in _UPCOMING_MARKERS):
@@ -91,8 +115,8 @@ def fetch_metadata(video_id: str, cookies_file: Path | None = None) -> VideoMeta
 
 
 @with_retries(attempts=4)
-def _extract(video_id: str, cookies_file: Path | None) -> dict[str, Any]:
-    options = ytdl_base_options(cookies_file) | {
+def _extract(video_id: str, env: YtdlEnv | None) -> dict[str, Any]:
+    options = ytdl_base_options(env) | {
         "skip_download": True,
         # Upcoming streams have no formats yet; return their metadata instead of failing.
         "ignore_no_formats_error": True,
