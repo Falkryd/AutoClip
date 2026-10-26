@@ -31,12 +31,25 @@ download:
   retries: 5
 
 transcribe:
+  source: auto            # auto = YouTube's auto-captions (free, with [tertawa] laugh tags), Whisper if
+                          #        there are none yet after captions_wait_hours. Or: youtube, whisper
+  captions_wait_hours: 6  # how long after the download to keep waiting for YouTube's captions
   model: large-v3         # best for Indonesian with English mixed in; ~3 GB VRAM at int8_float16
   device: cuda
   compute_type: int8_float16
   language: id            # Indonesian; English words still come through as spoken
   beam_size: 5
-  vad_filter: true
+  vad_filter: true        # skip non-speech (game audio, music) before transcribing
+  batch_size: 8           # parallel chunks on the GPU; 0 = sequential (slower, less VRAM)
+  max_segment_seconds: 12 # split long blocks into sentences: at . ? !, at pauses, or at this length
+  split_pause_seconds: 0.8
+  initial_prompt: null    # optional style hint for the first 30 s
+  hotwords: null          # optional words to favour everywhere, e.g. "Dota, gank, Roshan, buyback"
+  # Clean-up: drop segments that are probably not speech or are decoding loops.
+  # Known invented phrases ("Terima kasih telah menonton!") are always dropped.
+  drop_no_speech_prob: 0.6
+  drop_avg_logprob: -1.0
+  drop_compression_ratio: 2.4
 
 highlights:
   clips_per_stream: 3     # hard max 6: each upload costs ~1,600 of 10,000 daily quota units
@@ -47,10 +60,11 @@ highlights:
   shortlist_size: 12      # top windows by chat+audio that the LLM gets to read
   min_gap_seconds: 60     # minimum distance between picked clips
   music_flag_seconds: 20  # flag clips with this much loud audio but no speech (likely music)
-  weights:
-    chat: 0.4
-    audio: 0.25
-    llm: 0.35
+  weights:                # missing signals (no chat replay, no laugh tags) are left out and the rest rescaled
+    chat: 0.1             # chat is quiet on this channel for now
+    laughter: 0.3         # [tertawa] tags in YouTube's captions: you and your mates laughing
+    audio: 0.2            # loudness peaks
+    llm: 0.4              # local LLM reading the transcript
   ollama:
     host: http://127.0.0.1:11434
     model: qwen2.5:7b     # handles Indonesian better than llama3.1:8b; fits in 8 GB

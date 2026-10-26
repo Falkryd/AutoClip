@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.common.config import AppConfig
+from src.common.files import read_json
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _URL_VIDEO_ID = re.compile(r"(?:[?&]v=|youtu\.be/|/live/|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
@@ -64,8 +65,18 @@ class Artifacts:
         return self.root / "download.json"
 
     @property
+    def captions_raw(self) -> Path:
+        """YouTube's automatic captions as downloaded (json3, whole stream)."""
+        return self.root / "youtube_captions.json3"
+
+    @property
     def transcript(self) -> Path:
         return self.root / "transcript.json"
+
+    @property
+    def transcript_srt(self) -> Path:
+        """Same transcript as subtitles, for checking it in a video player."""
+        return self.root / "transcript.srt"
 
     @property
     def highlights(self) -> Path:
@@ -82,6 +93,36 @@ class Artifacts:
 
 def artifacts(cfg: AppConfig, video_id: str) -> Artifacts:
     return Artifacts(cfg.resolve(cfg.paths.work_dir) / validate_video_id(video_id))
+
+
+@dataclass(frozen=True)
+class Target:
+    """What a stage CLI works on: a stream's work/<id>/ folder, or any folder such as a sample."""
+
+    video_id: str | None
+    artifacts: Artifacts
+    is_pipeline_dir: bool  # work/<id>/: stage runs are recorded in the state database
+
+
+def resolve_target(cfg: AppConfig, text: str) -> Target:
+    """A video ID or URL means work/<id>/. Anything else must be an existing folder."""
+    try:
+        video_id = video_id_from(text)
+    except ValueError:
+        root = Path(text).resolve()
+        if not root.is_dir():
+            raise ValueError(f"Not a video ID, YouTube URL or folder: {text!r}") from None
+        video_id = _video_id_in(root)
+        in_work = video_id is not None and root == artifacts(cfg, video_id).root.resolve()
+        return Target(video_id, Artifacts(root), in_work)
+    return Target(video_id, artifacts(cfg, video_id), True)
+
+
+def _video_id_in(root: Path) -> str | None:
+    manifest = Artifacts(root).download_manifest
+    if manifest.is_file():
+        return read_json(manifest).get("video_id")
+    return root.name if _VIDEO_ID.fullmatch(root.name) else None
 
 
 def samples_root(cfg: AppConfig) -> Path:

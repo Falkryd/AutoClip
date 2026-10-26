@@ -7,7 +7,7 @@ Runs after each YouTube live stream ends and turns the VOD into 2–3 vertical S
 |---|---|---|---|
 | 1 | trigger: find finished streams | `uv run python -m src.trigger` | done |
 | 2 | download: VOD + chat replay (yt-dlp) | `uv run python -m src.download VIDEO_ID` | done |
-| 3 | transcribe: faster-whisper | `uv run python -m src.transcribe VIDEO_ID` | |
+| 3 | transcribe: YouTube captions, Whisper fallback | `uv run python -m src.transcribe VIDEO_ID` | done |
 | 4 | highlights: chat + loudness + Ollama | `uv run python -m src.highlights VIDEO_ID` | |
 | 5 | render: 9:16 stacked layout + captions | `uv run python -m src.render VIDEO_ID` | |
 | 6 | upload: private upload + Discord | `uv run python -m src.upload VIDEO_ID` | |
@@ -100,6 +100,37 @@ same folder layout:
 
 Re-running skips files that already exist; `--force` downloads again. YouTube doesn't seem
 to keep a chat replay for streams where nobody chatted, so `available: false` is normal.
+
+## Transcribe usage
+
+```bash
+uv run python -m src.transcribe VIDEO_ID                              # work/<id>/
+uv run python -m src.transcribe samples/8fKUNhHQR_M_023300-033300     # a sample folder
+uv run python -m src.transcribe VIDEO_ID --source whisper             # force Whisper
+```
+
+With `transcribe.source: auto` (the default) the stage uses **YouTube's automatic captions**
+(Indonesian, free, about a second to download). They catch more speech than Whisper on this
+channel and carry sound tags such as `[tertawa]` (laughing) and `[musik]`, which the highlights
+stage uses. If YouTube hasn't made captions yet, the stage exits with code 3 and is retried on
+the next run, for up to `captions_wait_hours` after the download; then **Whisper** (`large-v3`
+on the GPU, about 40 s per hour of audio) takes over. `--no-wait` skips the wait.
+
+Output, the same shape for both sources:
+
+| File | What it is |
+|---|---|
+| `transcript.json` | sentences with word timings, `sounds` (tag + time), and a `dropped` list with reasons |
+| `transcript.srt` | the sentences as subtitles: open it next to `vod.mp4` in VLC to check |
+| `youtube_captions.json3` | YouTube's captions as downloaded (whole stream) |
+
+Times are relative to `vod.mp4`. For a sample, `download.json` records where the cut really
+starts (`offset_s`: the keyframe before the requested time, ~5 s earlier on these VODs), and
+captions and chat are shifted by that, so they line up with the video to within ~0.2 s.
+
+Clean-up, mostly for Whisper: phrases it invents over music ("Terima kasih telah menonton!"),
+segments that are probably not speech, and repetition loops are dropped. YouTube's censored
+swear words come through as `***`.
 
 ## Tests
 

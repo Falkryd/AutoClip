@@ -12,7 +12,7 @@ import yt_dlp
 from yt_dlp.utils import DownloadError
 
 from src.common.config import AppConfig, DownloadConfig
-from src.common.ffmpeg import MediaInfo, copy_cut, extract_audio, probe
+from src.common.ffmpeg import MediaInfo, copy_cut, extract_audio, keyframe_before, probe
 from src.common.files import read_json, write_json_atomic
 from src.common.paths import Artifacts, artifacts, samples_root
 from src.common.retry import with_retries
@@ -101,11 +101,15 @@ def run_download(
         download_vod(video_id, full_vod, cfg.download, env)
     else:
         _log.info("Keeping existing %s", full_vod)
-    if section and (force or not a.vod.is_file()):
-        _log.info("Cutting %s out of the full VOD", section.label())
-        # Stream copy: starts on the keyframe at or before the cut (YouTube uses ~2 s
-        # keyframes), so chat times can be early by that much. Harmless for scoring windows.
-        copy_cut(full_vod, a.vod, section.start_s, section.duration_s)
+    offset_s = 0.0  # where vod.mp4 starts in the full stream
+    if section:
+        if force or not a.vod.is_file():
+            _log.info("Cutting %s out of the full VOD", section.label())
+            copy_cut(full_vod, a.vod, section.start_s, section.duration_s)
+        # A stream-copy cut starts on the keyframe at or before the requested start (seconds
+        # earlier on YouTube VODs). Chat and captions must line up with that, not the request.
+        offset_s = keyframe_before(full_vod, section.start_s)
+        _log.info("Sample starts at %.3f s in the stream", offset_s)
     media = probe(a.vod)
     if not media.has_audio:
         raise DownloadStageError(f"{a.vod} has no audio track")
@@ -116,7 +120,7 @@ def run_download(
 
     if force or not a.chat.is_file():
         write_json_atomic(
-            a.chat, fetch_chat(video_id, a, section, media.duration_s, env, force=force)
+            a.chat, fetch_chat(video_id, a, offset_s, media.duration_s, env, force=force)
         )
     chat = read_json(a.chat)
 
@@ -124,7 +128,7 @@ def run_download(
         _log.info("Extracting 16 kHz mono audio")
         extract_audio(a.vod, a.audio, AUDIO_SAMPLE_RATE)
 
-    manifest = _manifest(meta, a, section, media, chat)
+    manifest = _manifest(meta, a, section, offset_s, media, chat)
     write_json_atomic(a.download_manifest, manifest)  # written last: marks the stage done
     return manifest
 
@@ -154,13 +158,14 @@ def download_vod(video_id: str, dest: Path, dl: DownloadConfig, env: YtdlEnv) ->
 def fetch_chat(
     video_id: str,
     a: Artifacts,
-    section: Section | None,
+    offset_s: float,
     vod_duration_s: float,
     env: YtdlEnv,
     *,
     force: bool = False,
 ) -> dict[str, Any]:
-    offset = section.start_s if section else 0.0
+    """chat.json for vod.mp4, which starts offset_s seconds into the stream."""
+    offset = offset_s
     available = a.chat_raw.is_file() and not force
     if not available:
         available = _download_chat_raw(video_id, a, env)
@@ -234,7 +239,12 @@ class _ProgressLog:
 
 
 def _manifest(
-    meta: VideoMeta, a: Artifacts, section: Section | None, media: MediaInfo, chat: dict[str, Any]
+    meta: VideoMeta,
+    a: Artifacts,
+    section: Section | None,
+    offset_s: float,
+    media: MediaInfo,
+    chat: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "video_id": meta.video_id,
@@ -242,6 +252,7 @@ def _manifest(
         "url": video_url(meta.video_id),
         "live_status": meta.live_status,
         "stream_duration_s": meta.duration_s,
+        "offset_s": offset_s,  # where vod.mp4 starts in the stream; captions and chat use it
         "section": (
             {"start_s": section.start_s, "end_s": section.end_s, "label": section.label()}
             if section

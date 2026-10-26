@@ -55,12 +55,25 @@ class DownloadConfig(_Section):
 
 
 class TranscribeConfig(_Section):
+    # auto = YouTube's captions, waiting up to captions_wait_hours for them, else Whisper
+    source: Literal["auto", "youtube", "whisper"] = "auto"
+    captions_wait_hours: float = Field(default=6, ge=0)
     model: str = "large-v3"
     device: Literal["cuda", "cpu", "auto"] = "cuda"
     compute_type: str = "int8_float16"
     language: str | None = "id"
     beam_size: int = Field(default=5, ge=1)
     vad_filter: bool = True
+    batch_size: int = Field(default=8, ge=0)  # 0 = sequential (slower, uses less VRAM)
+    max_segment_seconds: float = Field(default=12, gt=0)
+    split_pause_seconds: float = Field(default=0.8, gt=0)
+    initial_prompt: str | None = None
+    hotwords: str | None = None
+    # Segments are dropped when no_speech_prob is above AND avg_logprob is below these...
+    drop_no_speech_prob: float = Field(default=0.6, ge=0, le=1)
+    drop_avg_logprob: float = Field(default=-1.0, le=0)
+    # ...or when the text repeats itself this much (a decoding loop).
+    drop_compression_ratio: float = Field(default=2.4, gt=0)
 
 
 class OllamaConfig(_Section):
@@ -73,13 +86,14 @@ class OllamaConfig(_Section):
 
 
 class Weights(_Section):
-    chat: float = Field(default=0.4, ge=0)
-    audio: float = Field(default=0.25, ge=0)
-    llm: float = Field(default=0.35, ge=0)
+    chat: float = Field(default=0.1, ge=0)
+    laughter: float = Field(default=0.3, ge=0)
+    audio: float = Field(default=0.2, ge=0)
+    llm: float = Field(default=0.4, ge=0)
 
     @model_validator(mode="after")
     def _not_all_zero(self) -> Weights:
-        if self.chat + self.audio + self.llm <= 0:
+        if self.chat + self.laughter + self.audio + self.llm <= 0:
             raise ValueError("at least one highlight weight must be positive")
         return self
 

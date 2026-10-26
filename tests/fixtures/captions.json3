@@ -1,0 +1,12 @@
+{
+  "wireMagic": "pb3",
+  "events": [
+    {"tStartMs": 0, "dDurationMs": 999999, "id": 1, "wpWinPosId": 1, "wsWinStyleId": 1},
+    {"tStartMs": 101000, "dDurationMs": 3000, "wWinId": 1, "segs": [{"utf8": "halo", "acAsrConf": 0}, {"utf8": " semua", "tOffsetMs": 400, "acAsrConf": 0}, {"utf8": " gimana", "tOffsetMs": 900, "acAsrConf": 0}, {"utf8": " kabarnya?", "tOffsetMs": 1300, "acAsrConf": 0}]},
+    {"tStartMs": 104000, "wWinId": 1, "aAppend": 1, "segs": [{"utf8": "\n"}]},
+    {"tStartMs": 104500, "dDurationMs": 2000, "wWinId": 1, "segs": [{"utf8": "[tertawa]"}]},
+    {"tStartMs": 107000, "dDurationMs": 5000, "wWinId": 1, "segs": [{"utf8": "lu", "acAsrConf": 0}, {"utf8": " [ __ ]", "tOffsetMs": 300, "acAsrConf": 0}, {"utf8": " anjing", "tOffsetMs": 700, "acAsrConf": 0}, {"utf8": " [musik]", "tOffsetMs": 1500}, {"utf8": " mantap", "tOffsetMs": 4000, "acAsrConf": 0}]},
+    {"tStartMs": 50000, "dDurationMs": 2000, "wWinId": 1, "segs": [{"utf8": "sebelum", "acAsrConf": 0}]},
+    {"tStartMs": 170000, "dDurationMs": 2000, "wWinId": 1, "segs": [{"utf8": "sesudah", "acAsrConf": 0}, {"utf8": " [tertawa]", "tOffsetMs": 500}]}
+  ]
+}

@@ -76,6 +76,33 @@ def run_ffmpeg(args: list[str]) -> None:
         )
 
 
+def keyframe_before(path: Path, t: float, window_s: float = 30) -> float:
+    """Time of the last video keyframe at or before t. A stream-copy cut starts there."""
+    result = subprocess.run(
+        [_tool("ffprobe"), "-v", "error", "-select_streams", "v:0",
+         "-read_intervals", f"{max(0.0, t - window_s):.3f}%{t + 0.001:.3f}",
+         "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )  # fmt: skip
+    if result.returncode != 0:
+        raise FFmpegError(f"ffprobe failed on {path}: {result.stderr.strip()[-500:]}")
+    keyframe = last_keyframe(result.stdout, t)
+    if keyframe is None:
+        raise FFmpegError(f"No keyframe within {window_s:.0f} s before {t:.1f} s in {path}")
+    return keyframe
+
+
+def last_keyframe(packets_csv: str, t: float) -> float | None:
+    """Parse ffprobe 'pts_time,flags' lines; keyframe packets have K in their flags."""
+    times = []
+    for line in packets_csv.splitlines():
+        pts, _, flags = line.strip().partition(",")
+        pts_time = _float(pts)
+        if pts_time is not None and "K" in flags and pts_time <= t + 1e-3:
+            times.append(pts_time)
+    return max(times, default=None)
+
+
 def copy_cut(src: Path, dst: Path, start_s: float, duration_s: float) -> None:
     """Cut without re-encoding. The cut starts on the keyframe at or before start_s."""
     tmp = dst.with_name(f"{dst.stem}.tmp{dst.suffix}")
@@ -84,7 +111,7 @@ def copy_cut(src: Path, dst: Path, start_s: float, duration_s: float) -> None:
                     "-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
                     "-avoid_negative_ts", "make_zero", "-movflags", "+faststart",
                     str(tmp)])  # fmt: skip
-        os.replace(tmp, dst)
+        _replace(tmp, dst)
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -95,9 +122,19 @@ def extract_audio(src: Path, dst: Path, sample_rate: int = 16_000) -> None:
     try:
         run_ffmpeg(["-i", str(src), "-vn", "-ac", "1", "-ar", str(sample_rate),
                     "-c:a", "pcm_s16le", str(tmp)])  # fmt: skip
-        os.replace(tmp, dst)
+        _replace(tmp, dst)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def _replace(tmp: Path, dst: Path) -> None:
+    try:
+        os.replace(tmp, dst)
+    except PermissionError as exc:
+        raise FFmpegError(
+            f"Can't replace {dst}: another program has it open (a video player?). "
+            "Close it and run again."
+        ) from exc
 
 
 def _float(value: object) -> float | None:

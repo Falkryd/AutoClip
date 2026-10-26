@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.common.config import AppConfig
-from src.common.ffmpeg import media_info_from_probe
+from src.common.ffmpeg import last_keyframe, media_info_from_probe
 from src.common.paths import Artifacts, video_id_from
 from src.common.timecode import compact_timecode, format_timecode, parse_timecode
 from src.download.chat import ChatMessage, chat_document, clip_to_window, parse_chat_lines
@@ -112,6 +112,12 @@ def test_media_info_handles_unknown_frame_rate() -> None:
         {"streams": [{"codec_type": "video", "avg_frame_rate": "0/0"}], "format": {"duration": "1"}}
     )
     assert info.fps is None and not info.has_audio
+
+
+def test_last_keyframe_picks_the_latest_keyframe_before_t() -> None:
+    csv = "9170.000000,K__\n9172.400000,__\n9174.833000,K__\n9180.100000,K__\nN/A,K__\n"
+    assert last_keyframe(csv, 9180.0) == 9174.833
+    assert last_keyframe("9181.0,K__\n", 9180.0) is None
 
 
 def test_is_complete_needs_every_file(tmp_path: Path) -> None:

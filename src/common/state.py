@@ -21,6 +21,7 @@ class StreamStatus(StrEnum):
 
 class StageStatus(StrEnum):
     RUNNING = "running"
+    WAITING = "waiting"  # an input isn't ready yet (e.g. YouTube captions): retry next run
     DONE = "done"
     FAILED = "failed"
 
