@@ -40,10 +40,10 @@ class LoggingConfig(_Section):
 
 
 class TriggerConfig(_Section):
-    method: Literal["rss", "api"] = "rss"
+    method: Literal["ytdlp", "rss", "api"] = "ytdlp"
     lookback_hours: float = Field(default=48, gt=0)
     give_up_after_hours: float = Field(default=168, gt=0)
-    api_max_results: int = Field(default=10, ge=1, le=50)
+    max_results: int = Field(default=15, ge=1, le=50)
 
 
 class DownloadConfig(_Section):

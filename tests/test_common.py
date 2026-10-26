@@ -22,6 +22,7 @@ def test_shipped_config_is_valid() -> None:
     cfg = load_config(DEFAULT_CONFIG_PATH)
     assert cfg.upload.privacy == "private"
     assert cfg.highlights.clips_per_stream == 3
+    assert cfg.trigger.method == "ytdlp"
 
 
 def test_upload_privacy_cannot_be_public() -> None:

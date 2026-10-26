@@ -15,10 +15,13 @@ logging:
   backup_count: 5
 
 trigger:
-  method: rss             # rss = public feed, free, no login. api = Data API, ~2 quota units per run
+  # ytdlp = your channel's Live tab via yt-dlp: free, no login, streams only (default)
+  # rss   = public feed: free, but YouTube's feed fails often for this channel
+  # api   = Data API: reliable, needs OAuth, ~2 quota units per run
+  method: ytdlp
   lookback_hours: 48      # streams first seen after they ended longer ago than this are skipped (stops a backfill on first run)
   give_up_after_hours: 168  # stop rechecking a stream that stays live/processing/unavailable this long
-  api_max_results: 10     # api method only: how many recent uploads to check
+  max_results: 15         # ytdlp/api: how many recent videos to check (rss always gives ~15)
 
 download:
   format: "bv*[height<=1080]+ba/b[height<=1080]"

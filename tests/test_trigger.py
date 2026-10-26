@@ -204,3 +204,46 @@ def test_rss_persistent_404_raises_clear_error(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(discover._get_rss.retry, "sleep", lambda _: None)
     with pytest.raises(discover.FeedUnavailable, match="channel.id"):
         discover.discover_rss("UC" + "a" * 22)
+
+
+def test_candidates_from_tab_keeps_only_videos() -> None:
+    from src.trigger.discover import candidates_from_tab
+
+    info = {
+        "entries": [
+            {"_type": "url", "id": "8fKUNhHQR_M", "title": "Chill Stream with mates"},
+            {"_type": "url", "id": "UCxa-f1esdZktFDntGV1s7Uw", "title": "a channel, not a video"},
+            {"_type": "url", "id": None, "title": "no id"},
+            "not a dict",
+            {"_type": "url", "id": "SQZqOLKKv-E", "title": None},
+        ]
+    }
+    assert candidates_from_tab(info) == [
+        Candidate("8fKUNhHQR_M", "Chill Stream with mates"),
+        Candidate("SQZqOLKKv-E", ""),
+    ]
+
+
+def test_ytdlp_discovery_channel_without_live_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    from yt_dlp.utils import DownloadError
+
+    from src.trigger import discover
+
+    def no_tab(*_: object) -> dict[str, object]:
+        raise DownloadError("ERROR: [youtube:tab] UCx: This channel does not have a streams tab")
+
+    monkeypatch.setattr(discover, "_extract_tab", no_tab)
+    assert discover.discover_ytdlp("UC" + "a" * 22, 15) == []
+
+
+def test_ytdlp_discovery_other_errors_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    from yt_dlp.utils import DownloadError
+
+    from src.trigger import discover
+
+    def blocked(*_: object) -> dict[str, object]:
+        raise DownloadError("\x1b[0;31mERROR:\x1b[0m Sign in to confirm you're not a bot")
+
+    monkeypatch.setattr(discover, "_extract_tab", blocked)
+    with pytest.raises(discover.DiscoveryError, match="not a bot"):
+        discover.discover_ytdlp("UC" + "a" * 22, 15)

@@ -66,11 +66,16 @@ def ytdl_base_options(cookies_file: Path | None) -> dict[str, Any]:
     return options
 
 
+def ytdl_error_message(exc: DownloadError) -> str:
+    """yt-dlp's error text without colour codes or the 'ERROR:' prefix."""
+    return _ANSI.sub("", str(exc)).removeprefix("ERROR: ").strip()
+
+
 def fetch_metadata(video_id: str, cookies_file: Path | None = None) -> VideoMeta:
     try:
         info = _extract(video_id, cookies_file)
     except DownloadError as exc:
-        message = _ANSI.sub("", str(exc)).removeprefix("ERROR: ").strip()
+        message = ytdl_error_message(exc)
         if any(marker in message.lower() for marker in _UPCOMING_MARKERS):
             return VideoMeta(video_id, "", "is_upcoming", None, None)
         raise MetadataError(message) from exc

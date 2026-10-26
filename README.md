@@ -46,7 +46,8 @@ uv sync
 
 The default is 10,000 units/day.
 
-- Trigger with `method: rss` costs nothing. `method: api` costs about 2 units per run.
+- Trigger with `method: ytdlp` (default) or `rss` costs nothing. `method: api` costs about 2
+  units per run.
 - Each upload costs about 1,600 units, so `clips_per_stream` is capped at 6 and
   `upload.max_uploads_per_day` defaults to 5.
 - YouTube forces uploads from unaudited API projects to private. That suits this workflow, but

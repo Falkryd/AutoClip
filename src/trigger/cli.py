@@ -16,7 +16,13 @@ from src.common.paths import artifacts, lock_path, state_db, validate_video_id
 from src.common.state import State, StreamRecord, StreamStatus, utcnow
 from src.common.ytdl import MetadataError, VideoMeta, fetch_metadata
 from src.trigger.core import Decision, NotReadyError, queue_manually, run_trigger, stream_info
-from src.trigger.discover import Candidate, FeedUnavailable, discover_api, discover_rss
+from src.trigger.discover import (
+    Candidate,
+    DiscoveryError,
+    discover_api,
+    discover_rss,
+    discover_ytdlp,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,7 +61,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except LockHeldError as exc:
         log.warning("%s; skipping this run", exc)
         return 0
-    except (ConfigError, FeedUnavailable, MetadataError, NotReadyError, ValueError) as exc:
+    except (ConfigError, DiscoveryError, MetadataError, NotReadyError, ValueError) as exc:
         log.error("%s", exc)
         return 1
     except Exception:
@@ -80,8 +86,8 @@ def _run(
             for v in args.queue
         ]
     else:
-        candidates = _discover(cfg)
-        log.info("%s feed returned %d videos", cfg.trigger.method.upper(), len(candidates))
+        candidates = _discover(cfg, cookies)
+        log.info("Discovery (%s) found %d videos", cfg.trigger.method, len(candidates))
         decisions = run_trigger(cfg.trigger, state, candidates, fetch, now, dry_run=args.dry_run)
 
     if not args.dry_run:
@@ -93,14 +99,16 @@ def _run(
     return decisions
 
 
-def _discover(cfg: AppConfig) -> list[Candidate]:
+def _discover(cfg: AppConfig, cookies: Path | None) -> list[Candidate]:
     if not cfg.channel.id:
         raise ConfigError("Set channel.id in config.yaml (your channel ID, starting with UC)")
+    if cfg.trigger.method == "ytdlp":
+        return discover_ytdlp(cfg.channel.id, cfg.trigger.max_results, cookies)
     if cfg.trigger.method == "rss":
         return discover_rss(cfg.channel.id)
     from src.common.youtube_auth import build_youtube  # only the api method needs OAuth
 
-    return discover_api(build_youtube(load_secrets()), cfg.channel.id, cfg.trigger.api_max_results)
+    return discover_api(build_youtube(load_secrets()), cfg.channel.id, cfg.trigger.max_results)
 
 
 def _print_decisions(decisions: list[Decision], *, dry_run: bool) -> None:
