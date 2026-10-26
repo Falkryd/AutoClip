@@ -97,10 +97,22 @@ def format_excerpt(
 
 
 def build_prompt(
-    excerpt: str, hint: str, first_id: int, last_id: int, min_s: float, max_s: float
+    excerpt: str,
+    hint: str,
+    first_id: int,
+    last_id: int,
+    min_s: float,
+    max_s: float,
+    focus: str | None = None,
 ) -> str:
+    theme = (
+        f'The streamer especially wants clips about this theme: "{focus}". Score moments '
+        "that fit it higher; a moment unrelated to it scores at most 6, however funny.\n\n"
+        if focus
+        else ""
+    )
     return (
-        f"Signals for this part of the stream: {hint}.\n\n"
+        theme + f"Signals for this part of the stream: {hint}.\n\n"
         f"Transcript, lines {first_id} to {last_id}:\n{excerpt}\n\n"
         f"Score this moment. Choose start_id and end_id (between {first_id} and {last_id}) "
         f"for a clip of {min_s:.0f} to {max_s:.0f} seconds, then write the title and reason."
@@ -134,10 +146,17 @@ class OllamaJudge:
             )
 
     def judge(
-        self, excerpt: str, hint: str, ids: list[int], *, min_s: float, max_s: float
+        self,
+        excerpt: str,
+        hint: str,
+        ids: list[int],
+        *,
+        min_s: float,
+        max_s: float,
+        focus: str | None = None,
     ) -> Verdict | None:
         """The model's verdict, or None if it twice answered with something unusable."""
-        prompt = build_prompt(excerpt, hint, ids[0], ids[-1], min_s, max_s)
+        prompt = build_prompt(excerpt, hint, ids[0], ids[-1], min_s, max_s, focus)
         # ~3 characters per token for this mix of Indonesian and English. Ollama silently
         # drops whatever doesn't fit in num_ctx, so refuse instead.
         if (len(self._system) + len(prompt)) / 3 > self._cfg.num_ctx * 0.8:

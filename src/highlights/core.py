@@ -12,6 +12,7 @@ from src.common.files import read_json, write_json_atomic
 from src.common.paths import Artifacts, Target
 from src.common.state import utcnow
 from src.common.timecode import format_timecode
+from src.highlights.focus import Focus, focus_times
 from src.highlights.llm import OllamaJudge, Verdict, format_excerpt
 from src.highlights.selection import (
     clip_bounds,
@@ -45,7 +46,7 @@ class HighlightsError(RuntimeError):
 class _Inputs:
     """Everything read from the folder, plus the per-window signal scores."""
 
-    def __init__(self, cfg: AppConfig, target: Target) -> None:
+    def __init__(self, cfg: AppConfig, target: Target, focus: Focus | None = None) -> None:
         hc = cfg.highlights
         a = target.artifacts
         for path, stage in ((a.transcript, "transcribe"), (a.audio, "download")):
@@ -79,6 +80,10 @@ class _Inputs:
             self.raw["chat"] = self._window_counts(self.chat_times, hc)
         else:
             self.notes["chat"] = "not available: no chat replay"
+        self.focus = focus
+        self.focus_times = focus_times(self.segments, focus) if focus else []
+        if focus:
+            self.raw["focus"] = self._window_counts(self.focus_times, hc)
         self.scaled: dict[str, np.ndarray] = {}
         for name, values in self.raw.items():
             scaled = scale(values)
@@ -134,6 +139,9 @@ class _Inputs:
         parts.append(f"loudest moments {self.raw['audio'][i]:.0f} dB above the surrounding minute")
         if "chat" in self.raw:
             parts.append(f"{int(self.raw['chat'][i])} chat messages")
+        if self.focus and "focus" in self.raw:
+            words = ", ".join(self.focus.words)
+            parts.append(f"{int(self.raw['focus'][i])} theme words ({words})")
         return ", ".join(parts)
 
     def count_between(self, times: list[float], start: float, end: float) -> int:
@@ -141,10 +149,19 @@ class _Inputs:
 
 
 def run_highlights(
-    cfg: AppConfig, target: Target, *, use_llm: bool = True, judge: OllamaJudge | None = None
+    cfg: AppConfig,
+    target: Target,
+    *,
+    use_llm: bool = True,
+    judge: OllamaJudge | None = None,
+    focus: Focus | None = None,
 ) -> dict[str, Any]:
+    """focus: a theme to favour (--focus); its words become a signal and the LLM is told."""
     hc = cfg.highlights
-    inputs = _Inputs(cfg, target)
+    inputs = _Inputs(cfg, target, focus)
+    if focus:
+        _log.info("Focus: %r; %d theme words in the transcript (%s)",
+                  focus.theme, len(inputs.focus_times), ", ".join(focus.words))  # fmt: skip
     weights = hc.weights.model_dump()
     signal_weights = {name: w for name, w in weights.items() if name != "llm"}
     # A still screen is penalised already here, so live moments get the LLM's attention.
@@ -202,6 +219,7 @@ def run_highlights(
         "offset_s": inputs.offset,
         "created_at": utcnow().isoformat(timespec="seconds"),
         "llm_model": hc.ollama.model if judge else None,
+        "focus": {"theme": focus.theme, "words": list(focus.words)} if focus else None,
         "signals": {name: "used" for name in inputs.scaled} | inputs.notes,
         "weights": weights,
         "clips": chosen,
@@ -230,6 +248,7 @@ def _evaluate(
         verdict = judge.judge(
             excerpt, inputs.hint(i), context_ids,
             min_s=hc.min_clip_seconds, max_s=hc.max_clip_seconds,
+            focus=inputs.focus.theme if inputs.focus else None,
         )  # fmt: skip
 
     window_ids = segment_ids_between(segments, window_start, window_end)
@@ -271,6 +290,7 @@ def _evaluate(
         "title": title,
         "reason": reason,
         "laughs": inputs.count_between(inputs.laugh_times, start, end),
+        "theme_words": inputs.count_between(inputs.focus_times, start, end),
         "chat_messages": inputs.count_between(inputs.chat_times, start, end),
         "loudness_spike_db": round(float(inputs.raw["audio"][i]), 1),
         "segment_ids": [covered[0], covered[-1]] if covered else None,

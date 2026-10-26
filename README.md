@@ -138,7 +138,14 @@ swear words come through as `***`.
 uv run python -m src.highlights VIDEO_ID                            # work/<id>/
 uv run python -m src.highlights samples/8fKUNhHQR_M_023300-033300   # a sample folder
 uv run python -m src.highlights VIDEO_ID --no-llm                   # signals only, for tuning
+uv run python -m src.highlights VIDEO_ID --focus "ga tidur sebelum menang"   # favour a theme
 ```
+
+`--focus THEME` favours moments about a theme: the LLM is told (an off-theme moment scores at
+most 6, however funny), and the theme's words become a signal (`weights.focus`), so on-theme
+stretches make the shortlist. The words are taken from the theme (`tidur`, `menang`) and match
+inside longer words (`kemenangan`, `tidurnya`); name your own with `--focus-words
+tidur,menang,ngantuk`.
 
 1. Every 45 s window (5 s steps) is scored on **laughs** (`[tertawa]` tags in YouTube's
    captions), **loudness spikes** (how far you get above the surrounding minute, so a loud

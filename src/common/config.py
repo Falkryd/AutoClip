@@ -89,6 +89,7 @@ class Weights(_Section):
     laughter: float = Field(default=0.3, ge=0)
     audio: float = Field(default=0.2, ge=0)
     llm: float = Field(default=0.4, ge=0)
+    focus: float = Field(default=0.5, ge=0)  # only with --focus: theme words in the transcript
 
     @model_validator(mode="after")
     def _not_all_zero(self) -> Weights:

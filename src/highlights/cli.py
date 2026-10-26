@@ -15,6 +15,7 @@ from src.common.paths import Target, lock_path, resolve_target, state_db
 from src.common.state import StageStatus, State
 from src.common.timecode import format_timecode
 from src.highlights.core import HighlightsError, run_highlights
+from src.highlights.focus import make_focus
 from src.highlights.llm import LlmError
 
 STAGE = "highlights"
@@ -30,6 +31,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "target",
         help="video ID or URL (uses work/<id>/), or a folder such as samples/<id>_<start>-<end>",
+    )
+    parser.add_argument(
+        "--focus",
+        metavar="THEME",
+        help='a theme to favour, e.g. "ga tidur sebelum menang": the LLM is told, and the '
+        "theme's words are searched in the transcript",
+    )
+    parser.add_argument(
+        "--focus-words",
+        metavar="WORDS",
+        help="comma-separated words to search for instead of the theme's own, "
+        "e.g. tidur,menang,ngantuk",
     )
     parser.add_argument(
         "--no-llm",
@@ -51,8 +64,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         target = resolve_target(cfg, args.target)
+        focus = make_focus(args.focus, args.focus_words) if args.focus else None
     except ValueError as exc:
         parser.error(str(exc))
+    if args.focus_words and not args.focus:
+        parser.error("--focus-words needs --focus")
     log = setup_logging(cfg, STAGE)
     a = target.artifacts
     if a.highlights.is_file() and not args.force:
@@ -66,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with file_lock(lock_path(cfg, f"{STAGE}-{a.root.name}")):
             if state:
                 state.mark_stage(video_id, STAGE, StageStatus.RUNNING)
-            run_highlights(cfg, target, use_llm=not args.no_llm)
+            run_highlights(cfg, target, use_llm=not args.no_llm, focus=focus)
     except LockHeldError as exc:
         log.warning("%s; skipping this run", exc)
         return 0
@@ -93,6 +109,8 @@ def _print_summary(target: Target) -> None:
     doc = read_json(target.artifacts.highlights)
     signals = "; ".join(f"{name}: {status}" for name, status in doc["signals"].items())
     print(f"Highlights in {target.artifacts.highlights}")
+    if doc.get("focus"):
+        print(f"  focus: {doc['focus']['theme']} (words: {', '.join(doc['focus']['words'])})")
     print(f"  signals: {signals}")
     if not doc["clips"]:
         print("  No clip was good enough. See 'candidates' in highlights.json.")
@@ -102,7 +120,7 @@ def _print_summary(target: Target) -> None:
             f"\n  #{clip['rank']}  {format_timecode(clip['start'])}-{format_timecode(clip['end'])} "
             f"({clip['duration_s']:.0f} s; stream {clip['stream_start']})  "
             f"score {clip['score']:.2f} "
-            f"({llm}{clip['laughs']} laughs)"
+            f"({llm}{clip['laughs']} laughs, {clip.get('theme_words', 0)} theme words)"
         )
         print(f"      {clip['title']}")
         print(f"      {clip['reason']}")

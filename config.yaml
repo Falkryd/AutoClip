@@ -74,6 +74,7 @@ highlights:
     laughter: 0.3         # [tertawa] tags in YouTube's captions: you and your mates laughing
     audio: 0.2            # loudness peaks
     llm: 0.4              # local LLM reading the transcript
+    focus: 0.5            # only with --focus: words of the theme in the transcript
   ollama:
     host: http://127.0.0.1:11434
     model: qwen2.5:7b     # handles Indonesian better than llama3.1:8b; fits in 8 GB

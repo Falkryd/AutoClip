@@ -15,6 +15,7 @@ from src.common.ffmpeg import run_ffmpeg
 from src.common.files import read_json, write_json_atomic
 from src.common.paths import Target, resolve_target
 from src.highlights.core import HighlightsError, run_highlights
+from src.highlights.focus import Focus, focus_times, make_focus
 from src.highlights.llm import (
     SYSTEM_PROMPT,
     LlmError,
@@ -250,21 +251,36 @@ def test_unload_frees_the_model() -> None:
 
 
 class ScriptedJudge:
-    """Likes the moment around 100 s, dislikes everything else."""
+    """Likes the moment around 100 s, dislikes everything else. Given a focus, it likes the
+    on-theme moment around 200 s best, as the real prompt asks."""
 
     def __init__(self) -> None:
         self.calls: list[list[int]] = []
+        self.hints: list[str] = []
+        self.focus: str | None = None
         self.unloaded = False
 
     def check_ready(self) -> None:
         pass
 
     def judge(
-        self, excerpt: str, hint: str, ids: list[int], *, min_s: float, max_s: float
+        self,
+        excerpt: str,
+        hint: str,
+        ids: list[int],
+        *,
+        min_s: float,
+        max_s: float,
+        focus: str | None = None,
     ) -> Verdict:
         self.calls.append(ids)
+        self.hints.append(hint)
+        self.focus = focus
+        if focus and 50 in ids:  # the on-theme line at 200 s
+            return Verdict(score=9, start_id=48, end_id=53, title="Gak tidur", reason="Theme.")
         if 25 in ids:  # the line at 100 s
-            return Verdict(score=9, start_id=23, end_id=28, title="Ngakak", reason="Laughs.")
+            score = 6 if focus else 9  # funny but off-theme
+            return Verdict(score=score, start_id=23, end_id=28, title="Ngakak", reason="Laughs.")
         return Verdict(score=2, start_id=ids[0], end_id=ids[-1], title="Biasa", reason="Dull.")
 
     def unload(self) -> None:
@@ -383,3 +399,55 @@ def test_still_screen_lowers_the_score_and_is_flagged(cfg: AppConfig, tmp_path: 
     plain = run_highlights(small_cfg(cfg, still_screen_penalty=0), target, judge=ScriptedJudge())  # type: ignore[arg-type]
     assert plain["signals"]["still_screen"].startswith("off")
     assert plain["clips"][0]["score"] > clip["score"] * 1.5
+
+
+# --- focus ---------------------------------------------------------------------------------
+
+
+def test_make_focus_takes_the_meaningful_words() -> None:
+    assert make_focus("ga tidur sebelum menang") == Focus(
+        "ga tidur sebelum menang", ("tidur", "menang")
+    )
+    assert make_focus("x", "Tidur, menang ,ngantuk").words == ("tidur", "menang", "ngantuk")
+    with pytest.raises(ValueError, match="--focus-words"):
+        make_focus("ga yang aja")
+
+
+def test_focus_times_match_inside_longer_words() -> None:
+    said = [(1.0, "Kemenangan!"), (2.0, "tidurnya"), (3.0, "farming")]
+    segments = [{"words": [{"start": t, "word": w} for t, w in said]}]
+    assert focus_times(segments, make_focus("ga tidur sebelum menang")) == [1.0, 2.0]
+
+
+def test_focus_is_put_in_the_llm_prompt() -> None:
+    fake = FakeOllama([GOOD])
+    fake.judge().judge("x", "y", [2, 3, 4], min_s=30, max_s=60, focus="ga tidur sebelum menang")
+    prompt = fake.requests[0][1]["messages"][1]["content"]
+    assert prompt.startswith('The streamer especially wants clips about this theme: "ga tidur')
+    assert "at most 6" in prompt
+
+
+def test_focus_shifts_the_pick_to_the_theme(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    transcript = read_json(target.artifacts.transcript)
+    transcript["segments"][50]["words"] = [
+        {"start": 200.0, "end": 200.5, "word": "gak"},
+        {"start": 200.5, "end": 201.0, "word": "tidur"},
+        {"start": 201.0, "end": 201.5, "word": "sampai"},
+        {"start": 201.5, "end": 202.0, "word": "menang"},
+    ]
+    write_json_atomic(target.artifacts.transcript, transcript)
+    one_clip = small_cfg(cfg, clips_per_stream=1)
+
+    plain = run_highlights(one_clip, target, judge=ScriptedJudge())  # type: ignore[arg-type]
+    assert plain["clips"][0]["title"] == "Ngakak" and plain["focus"] is None
+
+    judge = ScriptedJudge()
+    focus = make_focus("ga tidur sebelum menang")
+    themed = run_highlights(one_clip, target, judge=judge, focus=focus)  # type: ignore[arg-type]
+    clip = themed["clips"][0]
+    assert clip["title"] == "Gak tidur" and clip["theme_words"] == 2
+    assert themed["focus"] == {"theme": "ga tidur sebelum menang", "words": ["tidur", "menang"]}
+    assert themed["signals"]["focus"] == "used"
+    assert judge.focus == "ga tidur sebelum menang"
+    assert any("theme words (tidur, menang)" in hint for hint in judge.hints)
