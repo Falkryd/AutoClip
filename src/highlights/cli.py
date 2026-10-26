@@ -13,12 +13,23 @@ from src.common.lock import LockHeldError, file_lock
 from src.common.logs import setup_logging
 from src.common.paths import Target, lock_path, resolve_target, state_db
 from src.common.state import StageStatus, State
-from src.common.timecode import format_timecode
+from src.common.timecode import format_timecode, parse_timecode
 from src.highlights.core import HighlightsError, run_highlights
 from src.highlights.focus import make_focus
 from src.highlights.llm import LlmError
 
 STAGE = "highlights"
+
+
+def parse_stretch(text: str) -> tuple[float, float]:
+    """'3:34:00-3:35:24' -> (12840.0, 12924.0)."""
+    start, separator, end = text.partition("-")
+    if not separator:
+        raise ValueError(f"--include must look like START-END, e.g. 3:34:00-3:35:24: {text!r}")
+    first, last = parse_timecode(start), parse_timecode(end)
+    if last <= first:
+        raise ValueError(f"--include ends before it starts: {text!r}")
+    return first, last
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +56,21 @@ def build_parser() -> argparse.ArgumentParser:
         "e.g. tidur,menang,ngantuk",
     )
     parser.add_argument(
+        "--clips",
+        type=int,
+        choices=range(1, 7),
+        metavar="N",
+        help="how many clips this time (1-6), instead of highlights.clips_per_stream",
+    )
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=[],
+        metavar="START-END",
+        help="always make a clip from this stretch of vod.mp4, e.g. 3:34:00-3:35:24 (the "
+        "stream time for a full VOD); can be given more than once",
+    )
+    parser.add_argument(
         "--no-llm",
         action="store_true",
         help="score with laughs, loudness and chat only (quick, for tuning the weights)",
@@ -65,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         target = resolve_target(cfg, args.target)
         focus = make_focus(args.focus, args.focus_words) if args.focus else None
+        include = [parse_stretch(text) for text in args.include]
     except ValueError as exc:
         parser.error(str(exc))
     if args.focus_words and not args.focus:
@@ -82,7 +109,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         with file_lock(lock_path(cfg, f"{STAGE}-{a.root.name}")):
             if state:
                 state.mark_stage(video_id, STAGE, StageStatus.RUNNING)
-            run_highlights(cfg, target, use_llm=not args.no_llm, focus=focus)
+            run_highlights(
+                cfg, target, use_llm=not args.no_llm, focus=focus, include=include,
+                clips=args.clips,
+            )  # fmt: skip
     except LockHeldError as exc:
         log.warning("%s; skipping this run", exc)
         return 0

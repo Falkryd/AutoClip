@@ -14,6 +14,7 @@ from src.common.config import AppConfig, OllamaConfig, Rect
 from src.common.ffmpeg import run_ffmpeg
 from src.common.files import read_json, write_json_atomic
 from src.common.paths import Target, resolve_target
+from src.highlights.cli import parse_stretch
 from src.highlights.core import HighlightsError, run_highlights
 from src.highlights.focus import Focus, focus_times, make_focus
 from src.highlights.llm import (
@@ -451,3 +452,44 @@ def test_focus_shifts_the_pick_to_the_theme(cfg: AppConfig, tmp_path: Path) -> N
     assert themed["signals"]["focus"] == "used"
     assert judge.focus == "ga tidur sebelum menang"
     assert any("theme words (tidur, menang)" in hint for hint in judge.hints)
+
+
+# --- --clips and --include -------------------------------------------------------------------
+
+
+def test_pick_final_starts_with_the_asked_for_clips() -> None:
+    asked = {"start": 100, "end": 140, "score": 0.1}
+    cands = [{"start": 110, "end": 150, "score": 0.9}, {"start": 300, "end": 340, "score": 0.8}]
+    chosen = pick_final(cands, count=2, min_gap_s=60, start_with=[asked])
+    assert chosen == [asked, cands[1]]  # the 0.9 one overlaps the asked-for clip
+    assert pick_final(cands, count=1, min_gap_s=60, start_with=[asked, asked]) == [asked]
+
+
+def test_parse_stretch() -> None:
+    assert parse_stretch("3:34:00-3:35:24") == (12840.0, 12924.0)
+    for bad in ("3:34:00", "3:35:00-3:34:00"):
+        with pytest.raises(ValueError):
+            parse_stretch(bad)
+
+
+def test_include_keeps_a_stretch_the_llm_dislikes(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    doc = run_highlights(
+        small_cfg(cfg, min_gap_seconds=10), target, judge=ScriptedJudge(),  # type: ignore[arg-type]
+        include=[(195.0, 240.0)], clips=2,
+    )  # fmt: skip
+    asked = [c for c in doc["clips"] if c["asked_for"]]
+    assert len(doc["clips"]) == 2 and len(asked) == 1
+    assert asked[0]["llm_score"] == 2  # below min_llm_score, kept anyway
+    assert asked[0]["start"] >= 170 and asked[0]["end"] <= 240
+    assert {c["title"] for c in doc["clips"]} == {"Ngakak", "Biasa"}
+    assert doc["included"] == [[195.0, 240.0]]
+    assert [c["rank"] for c in doc["clips"]] == [1, 2]
+
+
+def test_clips_option_overrides_the_config(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    doc = run_highlights(
+        small_cfg(cfg), target, use_llm=False, clips=1,
+    )  # fmt: skip
+    assert len(doc["clips"]) == 1

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -155,9 +156,14 @@ def run_highlights(
     use_llm: bool = True,
     judge: OllamaJudge | None = None,
     focus: Focus | None = None,
+    include: Sequence[tuple[float, float]] = (),
+    clips: int | None = None,
 ) -> dict[str, Any]:
-    """focus: a theme to favour (--focus); its words become a signal and the LLM is told."""
+    """focus: a theme to favour (--focus); its words become a signal and the LLM is told.
+    include: (start, end) stretches of vod.mp4 that must become clips (--include).
+    clips: how many clips this time, instead of highlights.clips_per_stream (--clips)."""
     hc = cfg.highlights
+    count = clips or hc.clips_per_stream
     inputs = _Inputs(cfg, target, focus)
     if focus:
         _log.info("Focus: %r; %d theme words in the transcript (%s)",
@@ -178,18 +184,27 @@ def run_highlights(
     if not use_llm:
         judge = None
         inputs.notes["llm"] = "skipped (--no-llm)"
-    candidates = []
+    # Asked-for stretches are judged like any window (the LLM still picks clean lines and
+    # writes the title) but are always kept. Their signal scores come from the nearest window.
+    windows: list[tuple[int, tuple[float, float] | None]] = [(i, None) for i in picked]
+    for start, end in include:
+        start, end = max(0.0, start), min(end, inputs.duration)
+        nearest = int(np.argmin(np.abs(inputs.starts - start)))
+        windows.append((nearest, (start, end)))
+    candidates, forced = [], []
     try:
         if judge:
             judge.check_ready()
-        for n, i in enumerate(picked, start=1):
-            candidate = _evaluate(i, inputs, hc, weights, judge)
+        for n, (i, window) in enumerate(windows, start=1):
+            candidate = _evaluate(i, inputs, hc, weights, judge, window)
             _log.info(
-                "Candidate %d/%d at %s: score %.2f%s",
-                n, len(picked), format_timecode(candidate["start"]), candidate["score"],
+                "Candidate %d/%d at %s: score %.2f%s%s",
+                n, len(windows), format_timecode(candidate["start"]), candidate["score"],
                 f", LLM {candidate['llm_score']}/10" if candidate["llm_score"] is not None else "",
+                " (asked for)" if window else "",
             )  # fmt: skip
-            candidates.append(candidate)
+            candidate["asked_for"] = window is not None
+            (forced if window else candidates).append(candidate)
     finally:
         if judge:
             judge.unload()
@@ -199,7 +214,8 @@ def run_highlights(
     eligible = [
         c for c in candidates if c["llm_score"] is None or c["llm_score"] >= hc.min_llm_score
     ]
-    chosen = pick_final(eligible, hc.clips_per_stream, hc.min_gap_seconds)
+    chosen = pick_final(eligible, count, hc.min_gap_seconds, start_with=forced)
+    chosen.sort(key=lambda c: -c["score"])
     speech = speech_per_second(inputs.segments, inputs.duration)
     for rank, clip in enumerate(chosen, start=1):
         clip["rank"] = rank
@@ -222,8 +238,9 @@ def run_highlights(
         "focus": {"theme": focus.theme, "words": list(focus.words)} if focus else None,
         "signals": {name: "used" for name in inputs.scaled} | inputs.notes,
         "weights": weights,
+        "included": [[round(s, 2), round(e, 2)] for s, e in include],
         "clips": chosen,
-        "candidates": sorted(candidates, key=lambda c: -c["score"]),
+        "candidates": sorted(candidates + forced, key=lambda c: -c["score"]),
     }
     write_json_atomic(target.artifacts.highlights, document)  # marks the stage done
     return document
@@ -235,10 +252,12 @@ def _evaluate(
     hc: HighlightsConfig,
     weights: dict[str, float],
     judge: OllamaJudge | None,
+    window: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
+    """Window i of the grid, or `window` (start, end) when a stretch was asked for by hand."""
     segments = inputs.segments
-    window_start = float(inputs.starts[i])
-    window_end = window_start + hc.window_seconds
+    grid = (float(inputs.starts[i]), float(inputs.starts[i]) + hc.window_seconds)
+    window_start, window_end = window or grid
     context_ids = segment_ids_between(
         segments, window_start - hc.context_seconds, window_end + hc.context_seconds
     )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar
 
 import numpy as np
@@ -80,10 +80,16 @@ def clip_bounds(
 
 
 def pick_final(
-    candidates: list[dict[str, Any]], count: int, min_gap_s: float
+    candidates: list[dict[str, Any]],
+    count: int,
+    min_gap_s: float,
+    start_with: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """Best-scoring candidates first, skipping any within min_gap_s of one already picked."""
-    chosen: list[dict[str, Any]] = []
+    """start_with (clips asked for by hand) first, then the best-scoring candidates, skipping
+    any within min_gap_s of one already picked."""
+    chosen: list[dict[str, Any]] = list(start_with)[:count]
+    if len(chosen) == count:
+        return chosen
     for candidate in sorted(candidates, key=lambda c: -c["score"]):
         if all(
             candidate["start"] >= other["end"] + min_gap_s
