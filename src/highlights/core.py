@@ -60,6 +60,8 @@ class _Inputs:
         self.source: str = transcript["source"]
         self.duration: float = float(transcript["duration_s"])
         self.offset: float = float(transcript.get("offset_s", 0.0))
+        manifest = read_json(a.download_manifest) if a.download_manifest.is_file() else {}
+        self.title: str | None = manifest.get("title")  # context for the LLM
         self.sounds: list[dict[str, Any]] = transcript["sounds"]
         laugh_tags = {t.lower() for t in hc.laughter_tags}
         self.laugh_times = [s["t"] for s in self.sounds if s["tag"].lower() in laugh_tags]
@@ -214,8 +216,9 @@ def run_highlights(
     eligible = [
         c for c in candidates if c["llm_score"] is None or c["llm_score"] >= hc.min_llm_score
     ]
-    chosen = pick_final(eligible, count, hc.min_gap_seconds, start_with=forced)
-    chosen.sort(key=lambda c: -c["score"])
+    rank = theme_rank if focus else None
+    chosen = pick_final(eligible, count, hc.min_gap_seconds, start_with=forced, rank=rank)
+    chosen.sort(key=rank or (lambda c: c["score"]), reverse=True)
     speech = speech_per_second(inputs.segments, inputs.duration)
     for rank, clip in enumerate(chosen, start=1):
         clip["rank"] = rank
@@ -236,6 +239,7 @@ def run_highlights(
         "created_at": utcnow().isoformat(timespec="seconds"),
         "llm_model": hc.ollama.model if judge else None,
         "focus": {"theme": focus.theme, "words": list(focus.words)} if focus else None,
+        "ranking": "LLM theme score, then score (--focus)" if focus else "score",
         "signals": {name: "used" for name in inputs.scaled} | inputs.notes,
         "weights": weights,
         "included": [[round(s, 2), round(e, 2)] for s, e in include],
@@ -244,6 +248,13 @@ def run_highlights(
     }
     write_json_atomic(target.artifacts.highlights, document)  # marks the stage done
     return document
+
+
+def theme_rank(candidate: dict[str, Any]) -> tuple[int, float]:
+    """With --focus, the LLM is the only part that understands the theme, so its score
+    decides; laughs, loudness and chat only break ties."""
+    llm = candidate["llm_score"]
+    return (llm if llm is not None else -1, candidate["score"])
 
 
 def _evaluate(
@@ -268,10 +279,13 @@ def _evaluate(
             excerpt, inputs.hint(i), context_ids,
             min_s=hc.min_clip_seconds, max_s=hc.max_clip_seconds,
             focus=inputs.focus.theme if inputs.focus else None,
+            stream_title=inputs.title,
         )  # fmt: skip
 
     window_ids = segment_ids_between(segments, window_start, window_end)
-    if verdict:
+    if window and window_ids:  # a stretch you asked for is the clip; the LLM only titles it
+        first_id, last_id = window_ids[0], window_ids[-1]
+    elif verdict:
         first_id, last_id = verdict.start_id, verdict.end_id
     elif window_ids:
         first_id, last_id = window_ids[0], window_ids[-1]
@@ -281,6 +295,7 @@ def _evaluate(
         start, end = clip_bounds(
             segments, first_id, last_id, inputs.laugh_times,
             min_s=hc.min_clip_seconds, max_s=hc.max_clip_seconds, duration_s=inputs.duration,
+            theme_times=inputs.focus_times,
         )  # fmt: skip
     else:  # nobody talks here: the window itself
         start, end = window_start, min(window_end, inputs.duration)
@@ -290,7 +305,10 @@ def _evaluate(
         scores["llm"] = verdict.score / 10
     covered = segment_ids_between(segments, start, end)
     still = inputs.still_fraction(start, end)
-    score = float(combine(scores, weights)) * (1 - inputs.penalty * still)
+    # Theme words only build the shortlist. Literal matches can't tell "going to bed" from
+    # "putting an enemy to sleep"; the LLM, told the theme, judges the fit instead.
+    final = {name: value for name, value in scores.items() if name != "focus"}
+    score = float(combine(final, weights)) * (1 - inputs.penalty * still)
     if verdict:
         title, reason = verdict.title, verdict.reason
     else:

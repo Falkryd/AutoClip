@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TypeVar
 
 import numpy as np
@@ -13,6 +13,7 @@ LEAD_S = 0.3  # start a little before the first word
 TAIL_S = 0.7  # and let the last word ring out
 LAUGH_REACH_S = 3.0  # a laugh this soon after the last line is the payoff: keep it
 LAUGH_HOLD_S = 1.5
+THEME_REACH_S = 2.0  # a theme line starting this soon after the clip is its punchline
 LOUD_DB = 6.0  # "loud" for the music check: this far above the stream's median loudness
 
 T = TypeVar("T", float, np.ndarray)
@@ -52,8 +53,10 @@ def clip_bounds(
     min_s: float,
     max_s: float,
     duration_s: float,
+    theme_times: Sequence[float] = (),
 ) -> tuple[float, float]:
-    """Whole sentences from first_id to last_id, fitted to min_s..max_s."""
+    """Whole sentences from first_id to last_id, fitted to min_s..max_s. With a --focus
+    theme, a theme line right after the last sentence is kept too: it's the punchline."""
 
     def span(first: int, last: int) -> float:
         return segments[last]["end"] + TAIL_S - (segments[first]["start"] - LEAD_S)
@@ -65,6 +68,13 @@ def clip_bounds(
         last += 1
     while span(first, last) < min_s and first > 0 and span(first - 1, last) <= max_s:
         first -= 1
+    while last + 1 < len(segments) and span(first, last + 1) <= max_s:
+        following = segments[last + 1]
+        if following["start"] - segments[last]["end"] > THEME_REACH_S or not any(
+            following["start"] <= t <= following["end"] for t in theme_times
+        ):
+            break
+        last += 1
     start = max(0.0, segments[first]["start"] - LEAD_S)
     end = min(duration_s, segments[last]["end"] + TAIL_S)
 
@@ -84,13 +94,14 @@ def pick_final(
     count: int,
     min_gap_s: float,
     start_with: Sequence[dict[str, Any]] = (),
+    rank: Callable[[dict[str, Any]], Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """start_with (clips asked for by hand) first, then the best-scoring candidates, skipping
-    any within min_gap_s of one already picked."""
+    """start_with (clips asked for by hand) first, then the best candidates by `rank`
+    (default: score), skipping any within min_gap_s of one already picked."""
     chosen: list[dict[str, Any]] = list(start_with)[:count]
     if len(chosen) == count:
         return chosen
-    for candidate in sorted(candidates, key=lambda c: -c["score"]):
+    for candidate in sorted(candidates, key=rank or (lambda c: c["score"]), reverse=True):
         if all(
             candidate["start"] >= other["end"] + min_gap_s
             or candidate["end"] <= other["start"] - min_gap_s

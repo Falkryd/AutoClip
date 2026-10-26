@@ -273,10 +273,12 @@ class ScriptedJudge:
         min_s: float,
         max_s: float,
         focus: str | None = None,
+        stream_title: str | None = None,
     ) -> Verdict:
         self.calls.append(ids)
         self.hints.append(hint)
         self.focus = focus
+        self.stream_title = stream_title
         if focus and 50 in ids:  # the on-theme line at 200 s
             return Verdict(score=9, start_id=48, end_id=53, title="Gak tidur", reason="Theme.")
         if 25 in ids:  # the line at 100 s
@@ -493,3 +495,58 @@ def test_clips_option_overrides_the_config(cfg: AppConfig, tmp_path: Path) -> No
         small_cfg(cfg), target, use_llm=False, clips=1,
     )  # fmt: skip
     assert len(doc["clips"]) == 1
+
+
+# --- stream title, asked-for stretches, theme ranking ----------------------------------------
+
+
+def test_prompt_carries_the_stream_title() -> None:
+    fake = FakeOllama([GOOD])
+    fake.judge().judge(
+        "x", "y", [2, 3, 4], min_s=30, max_s=60,
+        stream_title="Late stream | We can't sleep until we win",
+    )  # fmt: skip
+    prompt = fake.requests[0][1]["messages"][1]["content"]
+    assert prompt.startswith('Stream title: "Late stream | We can\'t sleep until we win".')
+
+
+class NarrowJudge(ScriptedJudge):
+    """Picks a single line, as the real model did with the stream's ending."""
+
+    def judge(self, excerpt: str, hint: str, ids: list[int], **kwargs: Any) -> Verdict:
+        middle = ids[len(ids) // 2]
+        return Verdict(score=4, start_id=middle, end_id=middle, title="Akhir", reason="x")
+
+
+def test_asked_for_stretch_is_used_whole(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    write_json_atomic(target.artifacts.download_manifest, {"title": "Late stream"})
+    doc = run_highlights(
+        small_cfg(cfg, min_gap_seconds=0), target, judge=NarrowJudge(),  # type: ignore[arg-type]
+        include=[(184.0, 240.0)], clips=1,
+    )  # fmt: skip
+    clip = doc["clips"][0]
+    assert clip["asked_for"] and clip["title"] == "Akhir"
+    # every line from 184 s to 240 s, not just the one the LLM picked
+    assert clip["start"] == pytest.approx(183.7) and clip["end"] == pytest.approx(239.7)
+
+
+def test_theme_rank_puts_the_llm_first() -> None:
+    from src.highlights.core import theme_rank
+
+    funny = {"llm_score": 6, "score": 0.9}
+    on_theme = {"llm_score": 9, "score": 0.4}
+    unjudged = {"llm_score": None, "score": 0.99}
+    assert sorted([funny, unjudged, on_theme], key=theme_rank, reverse=True) == [
+        on_theme, funny, unjudged,
+    ]  # fmt: skip
+
+
+def test_clip_bounds_keeps_a_theme_punchline_right_after() -> None:
+    # From the stream: the LLM ended the clip one sentence before "lu kagak bakal tidur hari ini".
+    segments = segs((0, 20), (20.5, 38.3), (39.0, 43.0), (60.0, 65.0))
+    kwargs = {"min_s": 30, "max_s": 60, "duration_s": 100}
+    assert clip_bounds(segments, 0, 1, [], **kwargs)[1] == pytest.approx(39.0)
+    assert clip_bounds(segments, 0, 1, [], theme_times=[41.0], **kwargs)[1] == pytest.approx(43.7)
+    # a theme line after a long pause is a different moment
+    assert clip_bounds(segments, 0, 2, [], theme_times=[62.0], **kwargs)[1] == pytest.approx(43.7)
