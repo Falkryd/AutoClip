@@ -481,7 +481,7 @@ def test_include_keeps_a_stretch_the_llm_dislikes(cfg: AppConfig, tmp_path: Path
     asked = [c for c in doc["clips"] if c["asked_for"]]
     assert len(doc["clips"]) == 2 and len(asked) == 1
     assert asked[0]["llm_score"] == 2  # below min_llm_score, kept anyway
-    assert asked[0]["start"] >= 170 and asked[0]["end"] <= 240
+    assert asked[0]["start"] >= 194 and asked[0]["end"] <= 240  # only lines inside the stretch
     assert {c["title"] for c in doc["clips"]} == {"Ngakak", "Biasa"}
     assert doc["included"] == [[195.0, 240.0]]
     assert [c["rank"] for c in doc["clips"]] == [1, 2]

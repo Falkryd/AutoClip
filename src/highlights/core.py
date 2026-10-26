@@ -258,9 +258,9 @@ def _evaluate(
     segments = inputs.segments
     grid = (float(inputs.starts[i]), float(inputs.starts[i]) + hc.window_seconds)
     window_start, window_end = window or grid
-    context_ids = segment_ids_between(
-        segments, window_start - hc.context_seconds, window_end + hc.context_seconds
-    )
+    # A stretch you name yourself is used as is: the LLM only picks lines inside it.
+    context = 0.0 if window else hc.context_seconds
+    context_ids = segment_ids_between(segments, window_start - context, window_end + context)
     verdict: Verdict | None = None
     if judge and context_ids:
         excerpt = format_excerpt(segments, inputs.sounds, context_ids)
