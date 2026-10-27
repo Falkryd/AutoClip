@@ -174,7 +174,9 @@ def run_highlights(
     signal_weights = {name: w for name, w in weights.items() if name != "llm"}
     # A still screen is penalised already here, so live moments get the LLM's attention.
     first_pass = combine(inputs.scaled, signal_weights) * (1 - inputs.penalty * inputs.window_still)
-    picked = shortlist(inputs.starts, first_pass, hc.window_seconds, hc.shortlist_size)
+    # At least three candidates per clip, so the LLM has a real choice even for 7+ clips.
+    size = max(hc.shortlist_size, 3 * count)
+    picked = shortlist(inputs.starts, first_pass, hc.window_seconds, size)
     _log.info(
         "Signals: %s. Shortlisted %d windows for the LLM",
         ", ".join(inputs.scaled) or "none", len(picked),

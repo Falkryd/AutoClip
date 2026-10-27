@@ -58,9 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--clips",
         type=int,
-        choices=range(1, 7),
+        choices=range(1, 11),
         metavar="N",
-        help="how many clips this time (1-6), instead of highlights.clips_per_stream",
+        help="how many clips this time (1-10), instead of highlights.clips_per_stream. "
+        "Picking costs no quota; the upload stage spreads uploads over days",
     )
     parser.add_argument(
         "--include",

@@ -321,7 +321,7 @@ def test_stage_picks_the_laughing_moment(cfg: AppConfig, tmp_path: Path) -> None
     target = stream_folder(cfg, tmp_path)
     doc = run_highlights(small_cfg(cfg), target, judge=judge)  # type: ignore[arg-type]
 
-    assert judge.unloaded and len(judge.calls) == 3
+    assert judge.unloaded and len(judge.calls) == 4  # 3 per clip, as many as fit in 240 s
     assert [c["title"] for c in doc["clips"]] == ["Ngakak"]  # the dull ones scored below 4
     clip = doc["clips"][0]
     assert clip["rank"] == 1 and clip["llm_score"] == 9 and clip["laughs"] == 4
@@ -550,3 +550,20 @@ def test_clip_bounds_keeps_a_theme_punchline_right_after() -> None:
     assert clip_bounds(segments, 0, 1, [], theme_times=[41.0], **kwargs)[1] == pytest.approx(43.7)
     # a theme line after a long pause is a different moment
     assert clip_bounds(segments, 0, 2, [], theme_times=[62.0], **kwargs)[1] == pytest.approx(43.7)
+
+
+def test_cli_allows_up_to_ten_clips() -> None:
+    from src.highlights.cli import build_parser
+
+    assert build_parser().parse_args(["x", "--clips", "7"]).clips == 7
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["x", "--clips", "11"])
+
+
+def test_shortlist_grows_with_the_clip_count(cfg: AppConfig, tmp_path: Path) -> None:
+    target = stream_folder(cfg, tmp_path)
+    one = ScriptedJudge()
+    run_highlights(small_cfg(cfg, shortlist_size=1), target, judge=one, clips=1)  # type: ignore[arg-type]
+    many = ScriptedJudge()
+    run_highlights(small_cfg(cfg, shortlist_size=1), target, judge=many, clips=2)  # type: ignore[arg-type]
+    assert len(one.calls) == 3 and len(many.calls) > 3  # 3 per clip, as far as the stream allows
