@@ -129,12 +129,16 @@ def parse_loudnorm(stderr: str) -> dict[str, str]:
     return data
 
 
-def raw_frames(src: Path, video_filter: str) -> bytes:
-    """Decoded frames as raw bytes after video_filter (which sets their size and pixel format).
-    Decodes on the GPU when FFmpeg can."""
+def raw_frames(
+    src: Path, video_filter: str, start_s: float | None = None, duration_s: float | None = None
+) -> bytes:
+    """Decoded frames as raw bytes after video_filter (which sets their size and pixel format),
+    optionally of just one stretch. Decodes on the GPU when FFmpeg can."""
+    seek = [] if start_s is None else ["-ss", f"{start_s:.3f}"]
+    seek += [] if duration_s is None else ["-t", f"{duration_s:.3f}"]
     result = subprocess.run(
         [_tool("ffmpeg"), "-hide_banner", "-loglevel", "error", "-nostdin", "-hwaccel", "auto",
-         "-i", str(src), "-vf", video_filter, "-f", "rawvideo", "-"],
+         *seek, "-i", str(src), "-vf", video_filter, "-f", "rawvideo", "-"],
         capture_output=True,
     )  # fmt: skip
     if result.returncode != 0:

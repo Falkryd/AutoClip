@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from itertools import pairwise
 from typing import Any
 
 from src.common.config import CaptionConfig, HookConfig
@@ -39,10 +41,14 @@ def build_ass(
     hook: str | None = None,
     hook_style: HookConfig | None = None,
     duration_s: float = 0.0,
+    low_spans: Sequence[tuple[float, float]] = (),
+    low_y: float = 0.8,
 ) -> str:
     """words: {start, end, word} with times relative to the clip. hook: a line shown at the
-    top for the whole clip (duration_s), in a box."""
+    top for the whole clip (duration_s), in a box. low_spans: while these run (full-screen
+    shots), captions sit at low_y instead, clear of the face or the action."""
     margin_v = round(height * (1 - cc.y))  # bottom-aligned: distance from the bottom edge
+    low_margin_v = round(height * (1 - low_y))
     lines = [
         "[Script Info]",
         "ScriptType: v4.00+",
@@ -64,6 +70,11 @@ def build_ass(
     ]
     if hook and hook_style:
         lines.append(_dialogue(0.0, duration_s, _escape(hook), style="Hook"))
+
+    def add(start: float, end: float, text: str) -> None:
+        for a, b, low in split_at_spans(start, end, low_spans):
+            lines.append(_dialogue(a, b, text, margin_v=low_margin_v if low else 0))
+
     highlight = _bgr(cc.highlight_color)
     pages = caption_pages(words, cc.max_words_per_line)
     for n, page in enumerate(pages):
@@ -71,7 +82,7 @@ def build_ass(
         page_end = min(page[-1]["end"] + LINGER_S, next_start)
         texts = [_escape(w["word"]) for w in page]
         if cc.style == "sentence":
-            lines.append(_dialogue(page[0]["start"], page_end, " ".join(texts)))
+            add(page[0]["start"], page_end, " ".join(texts))
             continue
         for i, word in enumerate(page):
             start = word["start"]
@@ -79,8 +90,16 @@ def build_ass(
             lit = [
                 f"{{\\1c&H{highlight}&}}{t}{{\\r}}" if j == i else t for j, t in enumerate(texts)
             ]
-            lines.append(_dialogue(start, max(end, start + 0.05), " ".join(lit)))
+            add(start, max(end, start + 0.05), " ".join(lit))
     return "\n".join(lines) + "\n"
+
+
+def split_at_spans(
+    start: float, end: float, spans: Sequence[tuple[float, float]]
+) -> list[tuple[float, float, bool]]:
+    """Cut [start, end) where spans begin and end: (from, to, inside a span) pieces."""
+    cuts = sorted({start, end, *(t for s in spans for t in s if start < t < end)})
+    return [(a, b, any(s0 <= a and b <= s1 for s0, s1 in spans)) for a, b in pairwise(cuts)]
 
 
 def ass_color(hex_rgb: str) -> str:
@@ -101,8 +120,11 @@ def ass_time(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
 
 
-def _dialogue(start: float, end: float, text: str, style: str = "Default") -> str:
-    return f"Dialogue: 0,{ass_time(start)},{ass_time(end)},{style},,0,0,0,,{text}"
+def _dialogue(
+    start: float, end: float, text: str, style: str = "Default", margin_v: int = 0
+) -> str:
+    """margin_v 0 keeps the style's height; anything else overrides it for this line."""
+    return f"Dialogue: 0,{ass_time(start)},{ass_time(end)},{style},,0,0,{margin_v},,{text}"
 
 
 def _hook_style(hs: HookConfig, font: str, height: int) -> str:

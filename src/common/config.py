@@ -163,6 +163,25 @@ class HookConfig(_Section):
     box_opacity: float = Field(default=0.7, ge=0, le=1)
 
 
+class ShotsConfig(_Section):
+    """Cuts from the stacked layout to a full-screen view on a clip's big moments: the game
+    when the hero dies or a fight breaks out, the avatar when you laugh or shout."""
+
+    enabled: bool = True
+    game_view: Rect = Rect(x=0.364, y=0.0, w=0.272, h=0.86)  # trimmed to 9:16 if needed
+    game_zoom: float = Field(default=1.12, ge=1, le=3)  # slow push-in over the shot
+    face_zoom: float = Field(default=1.3, ge=1, le=3)  # quick punch-in on the avatar...
+    zoom_seconds: float = Field(default=0.2, gt=0)  # ...this fast
+    face_focus_y: float = Field(default=0.35, ge=0, le=1)  # the face, down the avatar's box
+    on_death: bool = True
+    on_action: bool = True
+    on_laugh: bool = True
+    on_shout: bool = True
+    shout_db: float = Field(default=12.0, gt=0)  # this far over the clip's typical loudness
+    max_fraction: float = Field(default=0.45, ge=0, le=1)  # of the clip, at most
+    caption_y: float = Field(default=0.8, gt=0, lt=1)  # captions drop here during a shot
+
+
 class RenderConfig(_Section):
     layout: Literal["stacked", "center"] = "stacked"
     width: int = Field(default=1080, gt=0)
@@ -176,6 +195,7 @@ class RenderConfig(_Section):
     normalize_audio: bool = True  # to -14 LUFS, YouTube's playback loudness
     jump_cuts: bool = True  # drop pauses between lines
     max_pause_seconds: float = Field(default=0.6, ge=0.1)
+    shots: ShotsConfig = ShotsConfig()
     hook: HookConfig = HookConfig()
     captions: CaptionConfig = CaptionConfig()
 

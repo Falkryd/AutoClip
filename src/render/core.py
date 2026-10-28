@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,25 @@ from src.common.files import read_json, write_json_atomic, write_text_atomic
 from src.common.paths import Artifacts, Target
 from src.common.state import utcnow
 from src.render.captions import build_ass
-from src.render.cuts import keep_intervals, kept_duration, remap_words, select_expression
+from src.render.cuts import (
+    cut_time,
+    keep_intervals,
+    kept_duration,
+    remap_words,
+    select_expression,
+)
 from src.render.layout import Layout, filter_graph, plan_layout
+from src.render.shots import (
+    Moment,
+    Shot,
+    action,
+    deaths,
+    manual_shots,
+    measure_screen,
+    measure_voice,
+    plan_shots,
+    shouts,
+)
 
 _log = logging.getLogger("autoclip.render")
 
@@ -43,6 +61,12 @@ class _Inputs:
         if not media.width or not media.height:
             raise RenderError(f"{a.vod} has no video stream")
         self.layout = plan_layout(rc, media.width, media.height)
+        self.vod = a.vod
+        self.fps = media.fps or 30.0
+        self.voice = a.audio if a.audio.is_file() else None
+        # Shots chosen last time, for clips that are already rendered and won't be again.
+        previous = read_json(a.renders)["clips"] if a.renders.is_file() else []
+        self.previous_shots = {c["file"]: c.get("shots", []) for c in previous}
 
 
 def run_render(cfg: AppConfig, target: Target, *, force: bool = False) -> dict[str, Any]:
@@ -107,15 +131,26 @@ def render_clip(
         intervals = keep_intervals(clip_text, laughs, source_duration, rc.max_pause_seconds)
         clip_text = remap_words(clip_text, intervals)
     duration = kept_duration(intervals) if intervals else source_duration
+    render = force or not video.is_file()
+    if render:
+        shots = clip_shots(clip, inputs, rc, intervals, duration)
+        _log.info(
+            "Shots for %s: %s",
+            video.name,
+            ", ".join(f"{s.view} {s.start:.1f}-{s.end:.1f} s ({s.reason})" for s in shots)
+            or "none",
+        )
+    else:
+        shots = [Shot(**s) for s in inputs.previous_shots.get(video.name, [])]
     captions = None
     if rc.captions.enabled or (rc.hook.enabled and clip.get("hook")):
         captions = _write_captions(a.clips_dir / f"{name}.ass", clip_text, clip, duration, rc,
-                                   inputs.layout)  # fmt: skip
-    if force or not video.is_file():
+                                   inputs.layout, shots)  # fmt: skip
+    if render:
         _log.info("Rendering %s: %s (%.0f s -> %.0f s)", video.name, clip["title"],
                   source_duration, duration)  # fmt: skip
         started = time.monotonic()
-        args = clip_args(a.vod, clip, inputs.layout, captions, rc, intervals)
+        args = clip_args(a.vod, clip, inputs.layout, captions, rc, intervals, shots, inputs.fps)
         _encode(video, args, a.clips_dir, rc)
         _log.info("Rendered %s in %.0f s", video.name, time.monotonic() - started)
     info = probe(video)
@@ -137,6 +172,7 @@ def render_clip(
         "stream_start": clip.get("stream_start"),
         "source_duration_s": round(source_duration, 2),
         "duration_s": round(info.duration_s, 2),
+        "shots": [asdict(s) for s in shots],
         "width": info.width,
         "height": info.height,
         "size_mb": round(video.stat().st_size / 1e6, 1),
@@ -150,6 +186,8 @@ def clip_args(
     captions: str | None,
     rc: RenderConfig,
     intervals: list[tuple[float, float]] | None = None,
+    shots: list[Shot] | None = None,
+    fps: float = 60.0,
 ) -> list[str]:
     # -ss and -t before -i: seek fast, and stop reading at the clip's end. After -i, -t only
     # caps the output; with jump cuts the output is shorter, so FFmpeg would decode the VOD
@@ -157,7 +195,8 @@ def clip_args(
     duration = clip["end"] - clip["start"]
     select = select_expression(intervals) if intervals else None
     args = ["-ss", f"{clip['start']:.3f}", "-t", f"{duration:.3f}", "-i", str(vod),
-            "-filter_complex", filter_graph(layout, captions, select), "-map", "[vout]",
+            "-filter_complex", filter_graph(layout, captions, select, shots or [], rc.shots, fps),
+            "-map", "[vout]",
             "-map", "0:a:0", *_video_codec(rc)]  # fmt: skip
     # The audio gets exactly the same cuts as the video, so they stay in sync.
     audio_cuts = f"aselect={select},asetpts=N/SR/TB" if select else ""
@@ -173,6 +212,56 @@ def clip_args(
         args += ["-af", audio_cuts]
     return [*args, "-c:a", "aac", "-b:a", rc.audio_bitrate, "-ar", "48000",
             "-movflags", "+faststart"]  # fmt: skip
+
+
+def clip_shots(
+    clip: dict[str, Any],
+    inputs: _Inputs,
+    rc: RenderConfig,
+    intervals: list[tuple[float, float]] | None,
+    duration_s: float,
+) -> list[Shot]:
+    """Full-screen shots on the cut timeline: set by hand in highlights.json ("shots", with
+    times as seen in the rendered clip), or found from deaths, action, laughs and shouts."""
+    if "shots" in clip:
+        try:
+            return manual_shots(clip["shots"], duration_s)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RenderError(
+                f'Clip {clip["rank"]}: bad "shots" in highlights.json: {exc}'
+            ) from exc
+    sc = rc.shots
+    if not sc.enabled:
+        return []
+    start, length = clip["start"], clip["end"] - clip["start"]
+    moments: list[Moment] = []
+    if sc.on_laugh:
+        moments += [Moment(t - start, "laugh") for t in inputs.laughs if 0 <= t - start < length]
+    view = inputs.layout.game_view_src
+    if view is not None and (sc.on_death or sc.on_action):
+        motion, colour, brightness = measure_screen(
+            inputs.vod, start, length, f"{view.w}:{view.h}:{view.x}:{view.y}"
+        )
+        if sc.on_death:
+            moments += [Moment(t, "death") for t in deaths(colour, brightness)]
+        if sc.on_action:
+            moments += action(motion)
+    if sc.on_shout and inputs.voice is not None:
+        voice = measure_voice(inputs.voice, start, length)
+        moments += [Moment(t, "shout") for t in shouts(voice, sc.shout_db)]
+    if intervals:
+        moments = [_on_cut_timeline(m, intervals) for m in moments]
+    views = {"game"} if view is not None else set()
+    if inputs.layout.face_out is not None:
+        views.add("face")
+    return plan_shots(moments, duration_s, sc.max_fraction, views)
+
+
+def _on_cut_timeline(m: Moment, intervals: list[tuple[float, float]]) -> Moment:
+    def cut(t: float | None) -> float | None:
+        return None if t is None else cut_time(t, intervals)
+
+    return Moment(cut_time(m.at, intervals), m.kind, cut(m.start), cut(m.end))
 
 
 def clip_words(words: list[dict[str, Any]], start: float, end: float) -> list[dict[str, Any]]:
@@ -192,6 +281,7 @@ def _write_captions(
     duration_s: float,
     rc: RenderConfig,
     layout: Layout,
+    shots: list[Shot] | None = None,
 ) -> str:
     """Writes the .ass file (captions and the hook line) and returns its bare name
     (FFmpeg runs inside clips/)."""
@@ -199,6 +289,7 @@ def _write_captions(
     ass = build_ass(
         words if rc.captions.enabled else [], rc.captions, layout.width, layout.height,
         hook=hook, hook_style=rc.hook, duration_s=duration_s,
+        low_spans=[(s.start, s.end) for s in shots or []], low_y=rc.shots.caption_y,
     )  # fmt: skip
     write_text_atomic(path, ass)
     return path.name

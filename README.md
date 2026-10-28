@@ -192,9 +192,19 @@ NVENC, AAC 48 kHz) plus `NN.jpg` (thumbnail for the review message) and `NN.ass`
   Dota HUD); `captions.style: sentence` turns the word highlight off.
 - **Audio**: two-pass loudness normalization to YouTube's -14 LUFS (with a -1.5 dBTP peak
   limit, so loud reactions don't clip).
+- **Full-screen shots** (`render.shots`): on a clip's big moments the stacked layout cuts to
+  one view for a couple of seconds, then back. The game view (`shots.game_view`, the middle of
+  the screen above the HUD) pushes in slowly when the hero dies (the screen turns grey) or on
+  the busiest stretch of a fight; the avatar view punches in on the face for each `[tertawa]`
+  laugh and for shouts. A death followed by a laugh plays as game, then face. At most
+  `shots.max_fraction` of a clip is full-screen, and captions drop to `shots.caption_y` during
+  a shot. `renders.json` lists the shots each clip got; to change them, put a `"shots"` list
+  on the clip in `highlights.json` (times as seen in the rendered clip, `[]` for none) and
+  render with `--force`.
 
-Rendering takes about a quarter of the clip's length on the RTX 5060 Ti. If NVENC ever fails,
-set `render.video_encoder: libx264` to encode on the CPU.
+Rendering takes about two thirds of the clip's length with full-screen shots (a quarter
+without) on the RTX 5060 Ti. If NVENC ever fails, set `render.video_encoder: libx264` to
+encode on the CPU.
 
 ## Tests
 

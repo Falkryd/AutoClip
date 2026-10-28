@@ -98,6 +98,23 @@ render:
   normalize_audio: true        # every Short at YouTube's loudness (-14 LUFS)
   jump_cuts: true              # cut pauses longer than max_pause_seconds between lines, so the
   max_pause_seconds: 0.6       # payoff comes sooner (laughs are kept)
+  shots:                       # cut to a full-screen view on the big moments, then back
+    enabled: true
+    game_view: {x: 0.364, y: 0.0, w: 0.272, h: 0.86}   # middle of the screen, above the HUD
+    game_zoom: 1.12            # the game view pushes in slowly over the shot
+    face_zoom: 1.3             # the avatar view punches in...
+    zoom_seconds: 0.2          # ...this fast
+    face_focus_y: 0.35         # where the face is, down the avatar's box (0 top, 1 bottom)
+    on_death: true             # game view when the screen turns grey (your hero died)
+    on_action: true            # game view on the busiest stretch of a fight
+    on_laugh: true             # avatar view on each [tertawa] laugh
+    on_shout: true             # avatar view when your voice jumps shout_db over the clip's usual
+    shout_db: 12
+    max_fraction: 0.45         # at most this share of a clip is full-screen
+    caption_y: 0.8             # captions drop here during a full-screen shot
+    # To set a clip's shots by hand, add "shots" to it in highlights.json, with times as seen
+    # in the rendered clip: [{"start": 3.2, "end": 5.0, "view": "face"}]. [] = no shots.
+    # renders.json lists the shots each clip got, as a starting point.
   hook:                        # a line at the top for the whole clip: what viewers wait for
     enabled: true              # (written by the LLM; edit "hook" in highlights.json before rendering)
     font_size: 56

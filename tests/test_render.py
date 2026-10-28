@@ -183,6 +183,23 @@ def test_jump_cuts_drop_the_silent_tail(cfg: AppConfig, tmp_path: Path) -> None:
     assert "Dialogue: 0,0:00:00.00,0:00:01.85,Hook,,0,0,0,,Misi malam ini" in ass
 
 
+@needs_ffmpeg
+def test_render_with_shots_set_by_hand(cfg: AppConfig, tmp_path: Path) -> None:
+    target = sample_folder(cfg, tmp_path)
+    highlights = read_json(target.artifacts.highlights)
+    highlights["clips"][0]["shots"] = [{"start": 0.2, "end": 0.8, "view": "game"},
+                                       {"start": 0.8, "end": 1.6, "view": "face"}]  # fmt: skip
+    write_json_atomic(target.artifacts.highlights, highlights)
+    manifest = run_render(cpu_cfg(cfg), target)
+    clip = manifest["clips"][0]
+    assert [(s["view"], s["start"], s["end"]) for s in clip["shots"]] == [
+        ("game", 0.2, 0.8), ("face", 0.8, 1.6)
+    ]  # fmt: skip
+    assert clip["duration_s"] == pytest.approx(1.85, abs=0.12)  # zoompan keeps every frame
+    ass = (target.artifacts.clips_dir / "01.ass").read_text(encoding="utf-8")
+    assert ",Default,,0,0,384,," in ass  # captions moved down during the shots
+
+
 # --- jump cuts and the hook line -------------------------------------------------------------
 
 
